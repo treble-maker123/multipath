@@ -1,6 +1,6 @@
 """Script that provides basic initializations to help with analysis of datasets.
 """
-dataset_path = "data/nell-995"
+dataset_path = "data/WN18RR"
 graph_path = f"{dataset_path}/graph.txt"
 train_path = f"{dataset_path}/train.txt"
 dev_path = f"{dataset_path}/dev.txt"

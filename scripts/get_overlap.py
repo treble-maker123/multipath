@@ -1,4 +1,4 @@
-dataset_path = "data/nell-995"
+dataset_path = "data/WN18RR"
 first_fname = "test"
 second_fname = "graph"
 

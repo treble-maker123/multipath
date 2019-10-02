@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=rgcn-nell995
+#SBATCH --job-name=rgcn-wn18rr
 #SBATCH -e outputs/errors/%j.txt
 #SBATCH --output=outputs/logs/%j.txt
 #SBATCH --partition=m40-long
@@ -23,7 +23,7 @@ export cmd="python3 main.py \
 --save-result \
 --use-gpu \
 --engine=rgcn \
---dataset-path=data/nell-995 \
+--dataset-path=data/WN18RR \
 --data-size=1000 \
 --num-epochs=6000 \
 --num-rgcn-layers=2 \

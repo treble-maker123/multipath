@@ -6,10 +6,11 @@ import torch
 import yaml
 
 from config import config, unknown, logger, tensorboard
-from lib.engines import Engine, RGCNEngine
+from lib.engines import Engine, RGCNEngine, MultiPathLinkPredictEngine
 
 ENGINE_TYPES: Dict[str, Type[Engine]] = {
-    "rgcn": RGCNEngine
+    "rgcn": RGCNEngine,
+    "multipath-link-predict": MultiPathLinkPredictEngine
 }
 
 # https://github.com/pytorch/pytorch/issues/1485

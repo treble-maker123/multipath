@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-#SBATCH --job-name=rgcn-nell995
+#SBATCH --job-name=multipath-fb15k
 #SBATCH -e outputs/errors/%j.txt
 #SBATCH --output=outputs/logs/%j.txt
 #SBATCH --partition=m40-long
@@ -18,23 +18,15 @@ export cmd="python3 main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---write-tensorboard \
+--no-write-tensorboard \
 --save-model \
 --save-result \
 --use-gpu \
---engine=rgcn \
---dataset-path=data/nell-995 \
---data-size=1000 \
---num-epochs=6000 \
---num-rgcn-layers=2 \
---num-bases=100 \
---hidden-dim=500 \
---validate-interval=500 \
---train-batch-size=2147483648 \
---test-batch-size=100 \
---learn-rate=0.01 \
---weight-decay=0.0 \
---embedding-decay=0.01 "
+--engine=multipath-link-predict \
+--dataset-path=data/FB15K-237 \
+--train-batch-size=1 \
+--test-batch-size=1 \
+--max-traversal-hops 3"
 
 echo ""
 echo "Executing \"$cmd\""

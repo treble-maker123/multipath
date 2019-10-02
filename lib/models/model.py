@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
 
 import torch.nn as nn
+from torch import Tensor
 
+from config import configured_device
 from lib import Object
+from lib.utils import Graph
 
 
 class Model(Object, nn.Module, ABC):
@@ -10,11 +13,12 @@ class Model(Object, nn.Module, ABC):
         Object.__init__(self)
         nn.Module.__init__(self)
         ABC.__init__(self)
+        self.device = configured_device
 
     @abstractmethod
-    def forward(self, triplets, graph):
-        assert triplets.shape[1] == 3, f"Triplets must be of the size (BATCH_SIZE, 3), got {triplets.shape} instead."
+    def forward(self, data: Tensor, graph: Graph) -> Tensor:
+        pass
 
     @abstractmethod
-    def loss(self, triplets, labels, graph):
-        assert triplets.shape[1] == 3, f"Triplets must be of the size (BATCH_SIZE, 3), got {triplets.shape} instead."
+    def loss(self, data: Tensor, labels: Tensor, graph: Graph) -> Tensor:
+        pass

@@ -13,28 +13,22 @@ class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
 
-        self.num_nodes = self.dataset.num_entities
-        self.num_relations = self.dataset.num_relations
-        self.train_data = self.dataset.get("graph").T
-        self.valid_data = self.dataset.get("valid").T
-        self.test_data = self.dataset.get("test").T
-
         # setting inverse to false because the graph file already contains inverted edges
         self.test_graph, test_relations, test_norm = \
-            build_test_graph(self.num_nodes, self.num_relations, self.train_data, inverse=False)
+            build_test_graph(self.num_nodes, self.num_relations, self.graph_data, inverse=False)
         self.test_graph.ndata.update({
             "id": torch.arange(0, self.num_nodes, dtype=torch.long).view(-1, 1),
             "norm": torch.from_numpy(test_norm).view(-1, 1)
         })
         self.test_graph.edata['type'] = torch.from_numpy(test_relations)
 
-        self.adj_list, self.degrees = get_adj_and_degrees(self.num_nodes, self.train_data)
+        self.adj_list, self.degrees = get_adj_and_degrees(self.num_nodes, self.graph_data)
 
     def provide_train_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         super().provide_train_data()
 
         graph, node_id, edge_type, node_norm, data, labels = \
-            generate_sampled_graph_and_labels(self.train_data,
+            generate_sampled_graph_and_labels(self.graph_data,
                                               self.config.graph_sample_size,
                                               self.config.train_graph_split,
                                               self.num_relations,
@@ -50,15 +44,19 @@ class RGCNEngine(Engine):
 
         return graph, data, labels
 
-    def provide_valid_data(self) -> Tuple[Graph, np.ndarray]:
+    def provide_valid_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         super().provide_valid_data()
+        triplets = perturb_data(self.valid_data.T).T
+        targets = triplets[:, 2]
 
-        return self.test_graph, perturb_data(self.valid_data.T).T
+        return self.test_graph, triplets, targets
 
-    def provide_test_data(self) -> Tuple[Graph, np.ndarray]:
+    def provide_test_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         super().provide_test_data()
+        triplets = perturb_data(self.test_data.T).T
+        targets = triplets[:, 2]
 
-        return self.test_graph, perturb_data(self.test_data.T).T
+        return self.test_graph, triplets, targets
 
     def setup_model(self, from_path: str = None):
         super().setup_model(from_path)

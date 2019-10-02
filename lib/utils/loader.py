@@ -30,7 +30,7 @@ class Loader(Object):
 
         def __getitem__(self, idx: int) -> Tuple[Optional[Tensor], Optional[Tensor]]:
             triplets = self.data[idx]
-            labels = np.zeros(triplets.shape[0]) if self.label is None else self.label[idx].astype("float32")
+            labels = np.zeros(triplets.shape[0]) if self.label is None else self.label[idx].astype("long")
 
             # -1 when the entity or relation are not in the vocab file
             if (triplets == -1).sum() > 0:

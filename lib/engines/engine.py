@@ -8,6 +8,7 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam
 from tqdm import tqdm
 
+from config import configured_device
 from lib import Object
 from lib.models import Model
 from lib.utils import Graph, Dataset, Loader, Result
@@ -31,16 +32,24 @@ class Engine(Object, ABC):
         result_path = self.config.saved_result_path
         self.result_path: str = f"{result_path}/{self.config.run_id}.pt" if result_path != "" else ""
 
+        self.num_nodes = self.dataset.num_entities
+        self.num_relations = self.dataset.num_relations
+
+        self.train_data = self.dataset.get("train").T
+        self.valid_data = self.dataset.get("valid").T
+        self.test_data = self.dataset.get("test").T
+        self.graph_data = self.dataset.get("graph").T
+
     @abstractmethod
     def provide_train_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         pass
 
     @abstractmethod
-    def provide_valid_data(self) -> Tuple[Graph, np.ndarray]:
+    def provide_valid_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         pass
 
     @abstractmethod
-    def provide_test_data(self) -> Tuple[Graph, np.ndarray]:
+    def provide_test_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
         pass
 
     @abstractmethod
@@ -75,8 +84,8 @@ class Engine(Object, ABC):
 
             if validate and epoch % self.config.validate_interval == 0:
                 self.logger.info("Performing validation on development set...")
-                valid_graph, valid_data = self.provide_valid_data()
-                dev_result = self.loop_through_data_for_eval(valid_data, valid_graph, self.model)
+                valid_graph, valid_data, valid_targets = self.provide_valid_data()
+                dev_result = self.loop_through_data_for_eval(valid_data, valid_targets, valid_graph, self.model)
                 dev_mrr = dev_result.calculate_mrr().item()
 
                 self.logger.info(f"Validation completed for epoch {epoch + 1}, results:")
@@ -85,6 +94,7 @@ class Engine(Object, ABC):
                 if dev_mrr > best_mrr:
                     self.logger.info(f"Better MRR ({round(dev_mrr, 6)} > {round(best_mrr, 6)})!")
                     best_mrr = dev_mrr
+
                     if self.config.save_model:
                         self.logger.info("Saving model...")
                         self.save_model_to_file(self.model_file_path)
@@ -94,11 +104,12 @@ class Engine(Object, ABC):
         self.setup_model(model_path or self.model_file_path)
 
         self.logger.info("Starting testing...")
-        test_graph, test_data = self.provide_test_data()
-        test_result = self.loop_through_data_for_eval(test_data, test_graph, self.model)
+        test_graph, test_data, test_targets = self.provide_test_data()
+        test_result = self.loop_through_data_for_eval(test_data, test_targets, test_graph, self.model)
 
         self.logger.info("Testing completed! Results:")
         self.pretty_print_results(test_result, "test")
+
         if self.config.save_result:
             self.logger.info("Saving results...")
             test_result.save_state(self.result_path)
@@ -109,7 +120,7 @@ class Engine(Object, ABC):
                                        graph: Graph,
                                        optim: Adam,
                                        model: Type[Model]):
-        dataset = Loader.build(data, target)
+        dataset = Loader.build(data, target, batch_size=self.config.train_batch_size)
 
         for i, (triplets, labels) in enumerate(dataset):
             graph.to(self.device)
@@ -133,9 +144,10 @@ class Engine(Object, ABC):
     @torch.no_grad()
     def loop_through_data_for_eval(self,
                                    data: np.ndarray,
+                                   target: np.ndarray,
                                    graph: Graph,
                                    model: Type[Model]) -> Result:
-        dataset = Loader.build(data, batch_size=self.config.test_batch_size)
+        dataset = Loader.build(data, target, batch_size=self.config.test_batch_size)
         graph.to(self.device)
         model.to(device=self.device)
         model.eval()
@@ -143,11 +155,11 @@ class Engine(Object, ABC):
         result = Result()
 
         with tqdm(total=len(dataset)) as pbar:
-            for i, (triplets, _) in enumerate(dataset):
+            for i, (triplets, labels) in enumerate(dataset):
                 triplets = triplets.to(device=self.device)
+                labels = labels.to(device=self.device)
 
                 scores: Tensor = model.forward(triplets, graph)
-                labels = triplets[:, 2]
 
                 result.append(scores.cpu(), labels.cpu())
 
@@ -182,14 +194,7 @@ class Engine(Object, ABC):
             self.device = device
             return
 
-        num_gpu = torch.cuda.device_count()
-
-        if self.config.use_gpu and num_gpu > 0:
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-
-        self.logger.info(f"Using {self.device} for training (GPUs: {num_gpu}).")
+        self.device = configured_device
 
     def pretty_print_results(self, result: Result, split: str, epoch: int = 0):
         mrr = result.calculate_mrr().item()
@@ -197,8 +202,7 @@ class Engine(Object, ABC):
         top_3 = result.calculate_top_hits(hit=3).detach().item()
         top_10 = result.calculate_top_hits(hit=10).detach().item()
 
-        # self.logger.info(
-        print(
+        self.logger.info(
             f"{split} results:"
             f"\n\t MRR: {round(mrr, 6)}"
             f"\n\t TOP 1 HIT: {round(top_1, 6)}"

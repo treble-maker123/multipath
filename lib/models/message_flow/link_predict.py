@@ -1,21 +1,22 @@
 from pdb import set_trace
-from typing import Union
 
 import dgl.function as fn
-from dgl.subgraph import DGLSubGraph
+from dgl import NodeFlow
+from dgl.contrib.sampling.sampler import NeighborSampler
 from dgl.udf import EdgeBatch
 from torch import Tensor
 from torch.nn import functional as F
 
-from lib.models.multipath.embedding import EntityEmbedding, RelationEmbedding
-from lib.models.multipath.multi_path_base_model import MultiPathBaseModel
+from lib.models import Model
+from lib.models.message_flow.embedding import EntityEmbedding, RelationEmbedding
 from lib.utils import Graph
 
 
-class LinkPredict(MultiPathBaseModel):
+class LinkPredict(Model):
     def __init__(self, max_hops: int, num_entities: int, num_relations: int, hidden_dim: int):
-        super().__init__(max_hops)
+        super().__init__()
 
+        self.max_hops = max_hops
         self.embed_entities = EntityEmbedding(num_entities, hidden_dim)
         self.embed_relations = RelationEmbedding(num_relations, hidden_dim)
 
@@ -43,20 +44,26 @@ class LinkPredict(MultiPathBaseModel):
                             dst_node_id: Tensor,
                             graph: Graph,
                             num_hops: int) -> Tensor:
-        path_subgraph = self.get_path_subgraph(src_node_id, dst_node_id, num_hops, graph)
-        path_subgraph.copy_from_parent()
+        subgraph = self.get_path_subgraph(src_node_id, dst_node_id, num_hops, graph)
+        subgraph.readonly()
+        subgraph.copy_from_parent()
 
-        self.embed_entities(path_subgraph)
-        self.embed_relations(path_subgraph)
+        self.embed_entities(subgraph)
+        self.embed_relations(subgraph)
 
-        # TODO: May not be the best way to approach this, the dst_node will see neighbor messages multiple times.
-        #  Maybe look into implementing NodeFlow
-        for nth_hop in range(self.max_hops):
-            LinkPredict._propagate(path_subgraph)
+        src_node_idx = (subgraph.ndata["id"].squeeze() == src_node_id).nonzero().squeeze()
+        sampler = NeighborSampler(subgraph,
+                                  batch_size=1,
+                                  num_hops=self.max_hops,
+                                  seed_nodes=src_node_idx,
+                                  expand_factor=100000,
+                                  neighbor_type="out")
 
-        dst_node_idx = (path_subgraph.ndata['id'].squeeze() == dst_node_id).nonzero().squeeze()
-
-        return path_subgraph.ndata['h'][dst_node_idx]
+        for g in sampler:  # should only be one because there is only one seed node
+            node_flow: NodeFlow = g
+            node_flow.copy_from_parent()
+            # TODO: Is fn.mean the best way? Same as normalizing by in-degree?
+            node_flow.prop_flow(message_funcs=self._message_func, reduce_funcs=fn.mean(msg="msg", out="h"))
 
     @staticmethod
     def _pairwise_distance(path_embedding: Tensor, relations_embedding: Tensor):
@@ -64,12 +71,10 @@ class LinkPredict(MultiPathBaseModel):
 
     @staticmethod
     def _message_func(edges: EdgeBatch):
+        set_trace()
+        # TODO: *** RuntimeError: index out of range at /Users/distiller/project/conda/conda-bld/pytorch_1556653464916/work/aten/src/TH/generic/THTensorEvenMoreMath.cpp:193
         node_embedding = edges.src["h"]
         edge_embedding = edges.data["h"]
         msg = node_embedding * edge_embedding
 
         return {"msg": msg}
-
-    @staticmethod
-    def _propagate(graph: Union[Graph, DGLSubGraph]):
-        graph.update_all(LinkPredict._message_func, fn.mean(msg='msg', out='h'))

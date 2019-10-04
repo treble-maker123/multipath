@@ -13,6 +13,10 @@ class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
 
+        # loads the old_graph because the old_graph contains all of the triplets, which is okay for RGCN because RGCN
+        # samples training data from the graph
+        self.graph_data = self.dataset.get("old_graph").T
+
         # setting inverse to false because the graph file already contains inverted edges
         self.test_graph, test_relations, test_norm = \
             build_test_graph(self.num_nodes, self.num_relations, self.graph_data, inverse=False)

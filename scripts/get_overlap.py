@@ -1,5 +1,5 @@
 dataset_path = "data/WN18RR"
-first_fname = "test"
+first_fname = "train"
 second_fname = "graph"
 
 if __name__ == "__main__":

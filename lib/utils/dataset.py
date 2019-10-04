@@ -14,7 +14,8 @@ class Dataset(Object):
             "train": Dataset.load_triplets_from_file(f"{dataset_path}/train.txt"),
             "valid": Dataset.load_triplets_from_file(f"{dataset_path}/dev.txt"),
             "test": Dataset.load_triplets_from_file(f"{dataset_path}/test.txt"),
-            "graph": Dataset.load_triplets_from_file(f"{dataset_path}/graph.txt")
+            "graph": Dataset.load_triplets_from_file(f"{dataset_path}/graph.txt"),
+            "old_graph": Dataset.load_triplets_from_file(f"{dataset_path}/old_graph.txt")
         }
 
         entities = []
@@ -45,7 +46,8 @@ class Dataset(Object):
             "train": self.triplets_to_idx(self.triplets["train"]),
             "valid": self.triplets_to_idx(self.triplets["valid"]),
             "test": self.triplets_to_idx(self.triplets["test"]),
-            "graph": self.triplets_to_idx(self.triplets["graph"])
+            "graph": self.triplets_to_idx(self.triplets["graph"]),
+            "old_graph": self.triplets_to_idx(self.triplets["old_graph"])
         }
 
     def get(self, split: str) -> np.ndarray:

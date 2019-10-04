@@ -3,8 +3,8 @@ import sys
 import uuid
 from argparse import Namespace, ArgumentParser
 from typing import Tuple, List
-import torch
 
+import torch
 from tensorboardX import SummaryWriter
 
 

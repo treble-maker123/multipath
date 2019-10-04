@@ -4,12 +4,12 @@ import numpy as np
 import torch
 
 from lib.engines import Engine
-from lib.models import MultiPathLinkPredict
+from lib.models import MessageFlowLinkPredict
 from lib.utils import Graph
 from lib.utils.dgl_utils import build_test_graph
 
 
-class MultiPathLinkPredictEngine(Engine):
+class MessageFlowLinkPredictEngine(Engine):
     def __init__(self):
         super().__init__()
 
@@ -48,10 +48,10 @@ class MultiPathLinkPredictEngine(Engine):
 
         self.logger.info("Setting up model...")
 
-        self.model = MultiPathLinkPredict(max_hops=self.config.max_traversal_hops,
-                                          num_entities=self.num_nodes,
-                                          num_relations=self.num_relations,
-                                          hidden_dim=self.config.hidden_dim)
+        self.model = MessageFlowLinkPredict(max_hops=self.config.max_traversal_hops,
+                                            num_entities=self.num_nodes,
+                                            num_relations=self.num_relations,
+                                            hidden_dim=self.config.hidden_dim)
 
         if from_path is not None:
             self.logger.info(f"Loading weights from {from_path}.")

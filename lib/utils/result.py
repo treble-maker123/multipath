@@ -10,6 +10,7 @@ class Result(Object):
     """This object takes in a score tensor of shape NUM_SAMPLE X NUM_LABELS and a label of shape NUM_SAMPLE and
     calculates various metrics.
     """
+
     def __init__(self, score: Tensor = None, label: Tensor = None):
         super().__init__()
 

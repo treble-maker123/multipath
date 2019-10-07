@@ -1,11 +1,11 @@
 from typing import Tuple
 
-import numpy as np
 import torch
+from torch.utils.data import DataLoader
 
 from lib.engines import Engine
 from lib.models import RGCN
-from lib.utils import Graph
+from lib.utils import Graph, Loader
 from lib.utils.dgl_utils import build_test_graph, get_adj_and_degrees, generate_sampled_graph_and_labels, perturb_data
 
 
@@ -28,7 +28,7 @@ class RGCNEngine(Engine):
 
         self.adj_list, self.degrees = get_adj_and_degrees(self.num_nodes, self.graph_data)
 
-    def provide_train_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_train_data(self) -> Tuple[Graph, DataLoader]:
         super().provide_train_data()
 
         graph, node_id, edge_type, node_norm, data, labels = \
@@ -46,34 +46,37 @@ class RGCNEngine(Engine):
         graph.ndata.update({"id": node_id, "norm": node_norm})
         graph.edata["type"] = edge_type
 
-        return graph, data, labels
+        dataset = Loader.build(data, labels, batch_size=self.config.train_batch_size)
+        return graph, dataset
 
-    def provide_valid_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_valid_data(self) -> Tuple[Graph, DataLoader]:
         super().provide_valid_data()
         triplets = perturb_data(self.valid_data.T).T
         targets = triplets[:, 2]
 
-        return self.test_graph, triplets, targets
+        dataset = Loader.build(triplets, targets, batch_size=self.config.test_batch_size)
+        return self.test_graph, dataset
 
-    def provide_test_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_test_data(self) -> Tuple[Graph, DataLoader]:
         super().provide_test_data()
         triplets = perturb_data(self.test_data.T).T
         targets = triplets[:, 2]
 
-        return self.test_graph, triplets, targets
+        dataset = Loader.build(triplets, targets, batch_size=self.config.test_batch_size)
+        return self.test_graph, dataset
 
     def setup_model(self, from_path: str = None):
         super().setup_model(from_path)
 
         self.logger.info("Setting up model...")
 
-        self.model = RGCN(self.num_nodes,
-                          self.config.hidden_dim,
-                          self.num_relations,
-                          self.config.num_bases,
-                          self.config.num_rgcn_layers,
-                          self.config.loop_dropout,
-                          self.config.embedding_decay)
+        self.model = RGCN(num_nodes=self.num_nodes,
+                          hidden_dim=self.config.hidden_dim,
+                          num_relations=self.num_relations,
+                          num_bases=self.config.num_bases,
+                          num_hidden_layers=self.config.num_rgcn_layers,
+                          dropout=self.config.loop_dropout,
+                          node_regularization_param=self.config.embedding_decay)
 
         if from_path is not None:
             self.logger.info(f"Loading weights from {from_path}.")

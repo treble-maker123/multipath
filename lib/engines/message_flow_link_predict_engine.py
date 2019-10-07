@@ -58,4 +58,4 @@ class MessageFlowLinkPredictEngine(Engine):
             state_dict = torch.load(from_path)
             self.model.load_state_dict(state_dict)
 
-        self.logger.info("Finished setting up MultiPath link predict model.")
+        self.logger.info("Finished setting up MessageFlow link predict model.")

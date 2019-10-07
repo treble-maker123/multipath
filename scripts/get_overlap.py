@@ -1,4 +1,4 @@
-dataset_path = "data/WN18RR"
+dataset_path = "data/FB15K-237"
 first_fname = "train"
 second_fname = "graph"
 

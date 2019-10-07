@@ -24,9 +24,14 @@ export cmd="python3 main.py \
 --use-gpu \
 --engine=path-transform-link-predict \
 --dataset-path=data/FB15K-237 \
+--data-size 10 \
+--num-epochs=2 \
+--num-workers=0 \
 --train-batch-size=1 \
+--validate-interval=2 \
+--run-train-during-validate \
 --test-batch-size=1 \
---max-traversal-hops 3"
+--max-traversal-hops 2"
 
 echo ""
 echo "Executing \"$cmd\""

@@ -1,33 +1,29 @@
 from abc import ABC, abstractmethod
 from itertools import chain
-from multiprocessing import Pool, cpu_count
-from typing import List
+from typing import List, Tuple, Optional
 
 import torch
-import torch.nn as nn
 from dgl.subgraph import DGLSubGraph
 from torch import Tensor
 
 from config import configured_device
-from lib import Object
+from lib.models.module import Module
 from lib.types import Path
 from lib.utils import Graph
-from pdb import set_trace
 
 
-class Model(Object, nn.Module, ABC):
+class Model(Module, ABC):
     def __init__(self):
-        Object.__init__(self)
-        nn.Module.__init__(self)
+        Module.__init__(self)
         ABC.__init__(self)
         self.device = configured_device
 
     @abstractmethod
-    def forward(self, data: Tensor, graph: Graph) -> Tensor:
+    def forward(self, data: Tensor, graph: Graph, **kwargs) -> Tensor:
         pass
 
     @abstractmethod
-    def loss(self, data: Tensor, labels: Tensor, graph: Graph) -> Tensor:
+    def loss(self, data: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
         pass
 
     @classmethod
@@ -57,7 +53,8 @@ class Model(Object, nn.Module, ABC):
                         src_node_id: Tensor,
                         dst_node_id: Tensor,
                         max_hops: int,
-                        graph: Graph) -> List[Path]:
+                        graph: Graph,
+                        padding: Tuple[int, int] = None) -> Tuple[List[Path], Optional[List[Tensor]]]:
         """Enumerates all paths composed of edges start on src_node_id, and expanding breadth-first toward dst_node_id,
         with a maximum of max_hops.
 
@@ -66,6 +63,7 @@ class Model(Object, nn.Module, ABC):
             dst_node_id: A torch Tensor containing the destination node ID
             max_hops: The most number of hops to make to identify paths
             graph: The graph on which to traverse
+            padding: A tuple of indices representing the padding token for entity and relation
         """
         assert src_node_id.size() == torch.Size([1]) and dst_node_id.size() == torch.Size([1]), \
             f"Method only takes src_node_id and dst_node_id of 1, got {src_node_id.size()} and {dst_node_id.size()} " \
@@ -87,14 +85,20 @@ class Model(Object, nn.Module, ABC):
 
             # To speed up processing, in the last hop, filter out the ids in hop_dst_ids that is not dst_node_id
             if nth_hop == max_hops - 1:
-                matching_idx = (hop_dst_ids == dst_node_id).nonzero().squeeze()
+                matching_idx = (hop_dst_ids == dst_node_id).nonzero()
+                matching_idx = matching_idx.squeeze(0) if len(matching_idx.shape) > 1 else matching_idx
                 hop_src_ids = hop_src_ids[matching_idx]
                 hop_dst_ids = hop_dst_ids[matching_idx]
                 hop_edge_ids = hop_edge_ids[matching_idx]
 
-            arguments = zip(hop_src_ids, hop_dst_ids, hop_edge_ids, [hops[nth_hop]] * num_triplets)
-            with Pool(max((cpu_count() - 2), 1)) as pool:
-                hop_paths = pool.starmap(cls._create_hop_paths, arguments)
+            # convert the node and edge indices to entity and relation IDs
+            src_entity_ids = graph.ndata["id"].squeeze()[hop_src_ids]
+            rel_ids = graph.edata["type"][hop_edge_ids]
+            dst_entity_ids = graph.ndata["id"].squeeze()[hop_dst_ids]
+
+            arguments = [src_entity_ids, dst_entity_ids, rel_ids, [hops[nth_hop]] * num_triplets]
+            hop_paths = list(map(cls._create_hop_paths, *arguments))
+
             hops[nth_hop + 1] = list(set(chain(*hop_paths)))
             frontier_nodes = hop_dst_ids
 
@@ -107,7 +111,33 @@ class Model(Object, nn.Module, ABC):
             target_paths = list(filter(lambda path: path[-1] == dst_node_id, hop_paths))
             candidate_paths += target_paths
 
-        return candidate_paths
+        if padding is not None and len(candidate_paths) > 0:
+            num_paths = len(candidate_paths)
+            max_length = max(list(map(len, candidate_paths)))
+            paths_and_masks = list(map(cls._pad_to_max_length,
+                                       candidate_paths,
+                                       [max_length] * num_paths,
+                                       [padding] * num_paths))
+            candidate_paths, masks = list(zip(*paths_and_masks))
+
+            return candidate_paths, masks
+
+        return candidate_paths, None
+
+    @classmethod
+    def _pad_to_max_length(cls,
+                           path: Tuple[int],
+                           max_length: int,
+                           padding: Tuple[int, int]) -> Tuple[Tuple[int], Tensor]:
+        num_to_pad = (max_length - len(path))
+        # divide by 2 because extension consists of 2 elements
+        padded_path = path + tuple(padding * (num_to_pad // 2))
+        mask = torch.zeros(max_length, dtype=torch.bool)
+
+        if num_to_pad > 0:
+            mask[-num_to_pad:] = 1
+
+        return padded_path, mask
 
     @staticmethod
     def _create_hop_paths(hop_src_id: Tensor,

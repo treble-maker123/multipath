@@ -41,7 +41,7 @@ if __name__ == "__main__":
     print(f"There are {len(filtered_graph_triplets)} graph triplets after removal.")
 
     formatted_train_triplets = list_to_triplets(train_triplets)
-    formatted_graph_triplets = list_to_triplets(graph_triplets)
+    formatted_graph_triplets = list_to_triplets(filtered_graph_triplets)
 
     with open(output_train_path, "w") as file:
         file.writelines(formatted_train_triplets)

@@ -18,18 +18,18 @@ export cmd="python3 main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---no-write-tensorboard \
---no-save-model \
+--write-tensorboard \
+--save-model \
 --save-result \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/WN18 \
 --data-size=1000 \
---num-epochs=6000 \
+--num-epochs=800 \
 --num-rgcn-layers=2 \
 --num-bases=100 \
 --hidden-dim=500 \
---validate-interval=500 \
+--validate-interval=20 \
 --train-batch-size=2147483648 \
 --test-batch-size=100 \
 --learn-rate=0.01 \

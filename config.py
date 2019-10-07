@@ -75,6 +75,8 @@ def add_experiment_config(parser):
                         action="store_true",
                         default=False,
                         help="Whether to use GPU for training.")
+    parser.add_argument("--num-workers", type=int, default=0,
+                        help="Number of workers to use for data loader.")
     parser.add_argument("--engine", type=str,
                         default="multipath", help="Which engine to use, see ENGINE_TYPES in main.py for a list of "
                                                   "available engines.")
@@ -98,6 +100,8 @@ def add_experiment_config(parser):
     parser.add_argument("--validate-interval", type=int,
                         default=10, help="How many epochs of training to run before running validation on the training "
                                          "set")
+    parser.add_argument("--run-train-during-validate", dest="run_train_during_validate", action="store_true",
+                        default=False, help="Whether or not to run through the training set during validation.")
     parser.add_argument("--train-batch-size", type=int,
                         default=32, help="Batch size of triplets.")
     parser.add_argument("--test-batch-size", type=int,

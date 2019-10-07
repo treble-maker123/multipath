@@ -1,17 +1,16 @@
 from abc import ABC, abstractmethod
 from typing import Type, Optional, Tuple
 
-import numpy as np
 import torch
 from torch import Tensor
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam
-from tqdm import tqdm
+from torch.utils.data import DataLoader
 
 from config import configured_device
 from lib import Object
 from lib.models import Model
-from lib.utils import Graph, Dataset, Loader, Result
+from lib.utils import Graph, Dataset, Result
 
 
 class Engine(Object, ABC):
@@ -41,22 +40,22 @@ class Engine(Object, ABC):
         self.graph_data = self.dataset.get("graph").T
 
     @abstractmethod
-    def provide_train_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_train_data(self) -> Tuple[Graph, DataLoader]:
         pass
 
     @abstractmethod
-    def provide_valid_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_valid_data(self) -> Tuple[Graph, DataLoader]:
         pass
 
     @abstractmethod
-    def provide_test_data(self) -> Tuple[Graph, np.ndarray, np.ndarray]:
+    def provide_test_data(self) -> Tuple[Graph, DataLoader]:
         pass
 
     @abstractmethod
     def setup_model(self, from_path: str = None):
         pass
 
-    def train(self, num_epochs: int, validate: bool = True):
+    def train(self, num_epochs: int):
         if self.model is None:
             self.setup_model()
             assert self.model is not None, "Must override parent setup_model() method and supply model to self.model " \
@@ -69,9 +68,8 @@ class Engine(Object, ABC):
             self.logger.info(f"Starting epoch {epoch + 1}...")
 
             losses = []
-            train_graph, train_data, train_label = self.provide_train_data()
-            train_generator = enumerate(self.loop_through_data_for_training(train_data,
-                                                                            train_label,
+            train_graph, train_dataset = self.provide_train_data()
+            train_generator = enumerate(self.loop_through_data_for_training(train_dataset,
                                                                             train_graph,
                                                                             self.optim,
                                                                             self.model))
@@ -82,10 +80,17 @@ class Engine(Object, ABC):
             self.logger.info(f"Training for epoch {epoch + 1} completed, mean loss: {mean_loss}")
             self.tensorboard.add_scalar("train/loss", mean_loss, epoch)
 
-            if validate and epoch % self.config.validate_interval == 0:
+            if epoch % self.config.validate_interval == 0:
+                if self.config.run_train_during_validate:
+                    self.logger.info("Performing validation on training set...")
+                    train_result = self.loop_through_data_for_eval(train_dataset, train_graph, self.model)
+
+                    self.logger.info(f"Validation completed on training set for epoch {epoch + 1}, results:")
+                    self.pretty_print_results(train_result, "train", epoch)
+
                 self.logger.info("Performing validation on development set...")
-                valid_graph, valid_data, valid_targets = self.provide_valid_data()
-                dev_result = self.loop_through_data_for_eval(valid_data, valid_targets, valid_graph, self.model)
+                valid_graph, valid_dataset = self.provide_valid_data()
+                dev_result = self.loop_through_data_for_eval(valid_dataset, valid_graph, self.model)
                 dev_mrr = dev_result.calculate_mrr().item()
 
                 self.logger.info(f"Validation completed for epoch {epoch + 1}, results:")
@@ -104,8 +109,8 @@ class Engine(Object, ABC):
         self.setup_model(model_path or self.model_file_path)
 
         self.logger.info("Starting testing...")
-        test_graph, test_data, test_targets = self.provide_test_data()
-        test_result = self.loop_through_data_for_eval(test_data, test_targets, test_graph, self.model)
+        test_graph, test_dataset = self.provide_test_data()
+        test_result = self.loop_through_data_for_eval(test_dataset, test_graph, self.model)
 
         self.logger.info("Testing completed! Results:")
         self.pretty_print_results(test_result, "test")
@@ -115,14 +120,11 @@ class Engine(Object, ABC):
             test_result.save_state(self.result_path)
 
     def loop_through_data_for_training(self,
-                                       data: np.ndarray,
-                                       target: np.ndarray,
+                                       dataset: DataLoader,
                                        graph: Graph,
                                        optim: Adam,
                                        model: Type[Model]):
-        dataset = Loader.build(data, target, batch_size=self.config.train_batch_size)
-
-        for i, (triplets, labels) in enumerate(dataset):
+        for i, (triplets, labels, subgraph, masks) in enumerate(dataset):
             graph.to(self.device)
             model.to(device=self.device)
             model.train()
@@ -130,7 +132,7 @@ class Engine(Object, ABC):
             triplets = triplets.long().to(device=self.device)
             labels = labels.float().to(device=self.device)
 
-            loss: Tensor = model.loss(triplets, labels, graph)
+            loss: Tensor = model.loss(triplets, labels, graph, subgraph=subgraph, masks=masks)
 
             loss.backward()
             clip_grad_norm_(model.parameters(), self.config.grad_norm)
@@ -143,27 +145,22 @@ class Engine(Object, ABC):
 
     @torch.no_grad()
     def loop_through_data_for_eval(self,
-                                   data: np.ndarray,
-                                   target: np.ndarray,
+                                   dataset: DataLoader,
                                    graph: Graph,
                                    model: Type[Model]) -> Result:
-        dataset = Loader.build(data, target, batch_size=self.config.test_batch_size)
         graph.to(self.device)
         model.to(device=self.device)
         model.eval()
 
         result = Result()
 
-        with tqdm(total=len(dataset)) as pbar:
-            for i, (triplets, labels) in enumerate(dataset):
-                triplets = triplets.to(device=self.device)
-                labels = labels.to(device=self.device)
+        for i, (triplets, labels, subgraph, masks) in enumerate(dataset):
+            triplets = triplets.to(device=self.device)
+            labels = labels.to(device=self.device)
 
-                scores: Tensor = model.forward(triplets, graph)
+            scores: Tensor = model.forward(triplets, graph, subgraph=subgraph, masks=masks)
 
-                result.append(scores.cpu(), labels.cpu())
-
-                pbar.update(1)
+            result.append(scores.cpu(), labels.cpu())
 
         return result
 

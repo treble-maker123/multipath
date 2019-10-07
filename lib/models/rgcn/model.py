@@ -37,7 +37,7 @@ class RGCN(Model):
         nn.init.xavier_uniform_(self.w_relation,
                                 gain=nn.init.calculate_gain('relu'))
 
-    def forward(self, triplets: Tensor, graph: Graph) -> Tensor:
+    def forward(self, triplets: Tensor, graph: Graph, **kwargs) -> Tensor:
         super().forward(triplets, graph)
 
         # entity_emb: num_entities X hidden_dim
@@ -56,7 +56,7 @@ class RGCN(Model):
         # shouldn't sigmoid clip the values and boost performance? it's lowering performance without it
         return torch.sigmoid(scores)
 
-    def loss(self, triplets: Tensor, labels: Tensor, graph: Graph) -> Tensor:
+    def loss(self, triplets: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
         super().loss(triplets, labels, graph)
 
         node_embedding, edge_embedding = self._encode(graph)

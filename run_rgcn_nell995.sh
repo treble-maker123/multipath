@@ -24,17 +24,18 @@ export cmd="python3 main.py \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/nell-995 \
---data-size=1000 \
+--data-size=-1 \
 --num-epochs=6000 \
 --num-rgcn-layers=2 \
 --num-bases=100 \
 --hidden-dim=500 \
 --validate-interval=500 \
 --train-batch-size=2147483648 \
---test-batch-size=100 \
+--test-batch-size=370 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
---embedding-decay=0.01 "
+--embedding-decay=0.01 \
+--rgcn-regularizer=basis"
 
 echo ""
 echo "Executing \"$cmd\""

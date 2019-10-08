@@ -17,4 +17,3 @@ def list_to_triplets(triplets: List[Iterable[str]]) -> List[str]:
     "src\trel\tdst\n"
     """
     return list(map(lambda x: "\t".join(x) + "\n", triplets))
-

@@ -19,14 +19,14 @@ export cmd="python3 main.py \
 --no-log-to-file \
 --log-to-stdout \
 --no-write-tensorboard \
---save-model \
---save-result \
+--no-save-model \
+--no-save-result \
 --use-gpu \
 --engine=path-transform-link-predict \
 --dataset-path=data/FB15K-237 \
 --data-size 10 \
 --num-epochs=2 \
---num-workers=0 \
+--num-workers=6 \
 --train-batch-size=1 \
 --validate-interval=2 \
 --run-train-during-validate \

@@ -2,7 +2,6 @@
 """
 from utils import read_file_to_data, list_to_triplets
 
-
 if __name__ == "__main__":
     dataset_path = "data/WN18RR"
 

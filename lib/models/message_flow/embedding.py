@@ -3,7 +3,7 @@ from typing import Union
 import torch.nn as nn
 from dgl.subgraph import DGLSubGraph
 
-from lib.models import Module
+from lib.models.module import Module
 from lib.utils import Graph
 
 

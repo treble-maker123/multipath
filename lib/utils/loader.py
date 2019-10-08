@@ -51,7 +51,7 @@ class Loader(Object):
             else:
                 subgraph, masks = torch.zeros(1), torch.zeros(1)
 
-            # -1 when the entity or relation are not in the vocab file
+            # -1 when the entity or relation is not in the vocab file
             if (triplets == -1).sum() > 0:
                 return None, None, None, None
             else:

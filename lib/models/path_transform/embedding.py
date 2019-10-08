@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from lib.models import Module
+from lib.models.module import Module
 
 
 class PathEmbedding(Module):

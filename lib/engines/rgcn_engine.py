@@ -12,7 +12,6 @@ from lib.utils.dgl_utils import build_test_graph, get_adj_and_degrees, generate_
 class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
-
         # loads the old_graph because the old_graph contains all of the triplets, which is okay for RGCN because RGCN
         # samples training data from the graph
         self.graph_data = self.dataset.get("old_graph").T
@@ -74,9 +73,10 @@ class RGCNEngine(Engine):
                           hidden_dim=self.config.hidden_dim,
                           num_relations=self.num_relations,
                           num_bases=self.config.num_bases,
-                          num_hidden_layers=self.config.num_rgcn_layers,
                           dropout=self.config.loop_dropout,
-                          node_regularization_param=self.config.embedding_decay)
+                          num_layers=self.config.num_rgcn_layers,
+                          node_regularization_param=self.config.embedding_decay,
+                          regularizer=self.config.rgcn_regularizer)
 
         if from_path is not None:
             self.logger.info(f"Loading weights from {from_path}.")

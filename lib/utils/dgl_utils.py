@@ -18,7 +18,7 @@ def perturb_data(triplets: np.ndarray) -> np.ndarray:
 def build_graph_from_triplets(num_nodes: int,
                               num_rels: int,
                               triplets: np.ndarray,
-                              inverse: bool = True) -> Tuple[Graph, np.ndarray, np.ndarray]:
+                              inverse: bool = False) -> Tuple[Graph, np.ndarray, np.ndarray]:
     src, rel, dst = triplets
 
     if inverse:
@@ -146,7 +146,7 @@ def negative_sampling(pos_samples, num_entity, negative_rate):
     return np.concatenate((pos_samples, neg_samples)), labels
 
 
-def build_test_graph(num_nodes: int, num_rels: int, edges: np.ndarray, inverse: bool = True):
+def build_test_graph(num_nodes: int, num_rels: int, edges: np.ndarray, inverse: bool = False):
     """Inverse indicates whether to add inverted edges.
     """
     return build_graph_from_triplets(num_nodes, num_rels, edges.T, inverse)

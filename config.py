@@ -28,6 +28,8 @@ def add_rgcn_config(parser: ArgumentParser) -> ArgumentParser:
                         default=0.2, help="Dropout rate used on self loop.")
     parser.add_argument("--negative-sample-factor", type=int,
                         default=10, help="How much negative sampling to apply to the training data.")
+    parser.add_argument("--rgcn-regularizer", type=str,
+                        default="bbd", help="bdd (block-diagonal decomposition) or basis (basis decomposition)")
     parser.add_argument("--grad-norm", type=float,
                         default=1.0, help="norm to clip gradient to.")
 

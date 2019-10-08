@@ -18,23 +18,24 @@ export cmd="python3 main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---write-tensorboard \
---save-model \
---save-result \
+--no-write-tensorboard \
+--no-save-model \
+--no-save-result \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/WN18 \
---data-size=1000 \
---num-epochs=800 \
---num-rgcn-layers=2 \
---num-bases=100 \
---hidden-dim=500 \
---validate-interval=20 \
+--data-size=-1 \
+--num-epochs=6000 \
+--num-rgcn-layers=1 \
+--num-bases=2 \
+--hidden-dim=140 \
+--validate-interval=400 \
 --train-batch-size=2147483648 \
---test-batch-size=100 \
+--test-batch-size=200 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
---embedding-decay=0.01 "
+--embedding-decay=0.01 \
+--rgcn-regularizer=basis"
 
 echo ""
 echo "Executing \"$cmd\""

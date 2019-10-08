@@ -8,7 +8,6 @@ train_path = f"{dataset_path}/train.txt"
 dev_path = f"{dataset_path}/dev.txt"
 test_path = f"{dataset_path}/test.txt"
 
-
 if __name__ == "__main__":
     train_triplets = read_file_to_data(train_path)
     dev_triplets = read_file_to_data(dev_path)

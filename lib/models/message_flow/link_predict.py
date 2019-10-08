@@ -7,7 +7,7 @@ from dgl.udf import EdgeBatch
 from torch import Tensor
 from torch.nn import functional as F
 
-from lib.models import Model
+from lib.models.model import Model
 from lib.models.message_flow.embedding import EntityEmbedding, RelationEmbedding
 from lib.utils import Graph
 

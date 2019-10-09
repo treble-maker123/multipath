@@ -8,7 +8,7 @@ import torch
 from tensorboardX import SummaryWriter
 
 
-def add_multipath_config(parser: ArgumentParser) -> ArgumentParser:
+def add_custom_config(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument("--max-traversal-hops", type=int,
                         default=2, help="Maximum number of hops to make when enumerating paths between two nodes.")
 
@@ -117,7 +117,7 @@ def _get_config() -> Tuple[Namespace, List[str]]:
     parser = add_experiment_config(parser)
     parser = add_model_config(parser)
     parser = add_rgcn_config(parser)
-    parser = add_multipath_config(parser)
+    parser = add_custom_config(parser)
 
     known_config, unknown_config = parser.parse_known_args()
 

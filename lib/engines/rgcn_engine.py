@@ -1,11 +1,11 @@
-from typing import Tuple
+from math import ceil
 
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
 from lib.engines import Engine
-from lib.models import RGCN
-from lib.utils import Graph, Loader
+from lib.models import Model, RGCN
+from lib.utils import Graph, Result
 from lib.utils.dgl_utils import build_test_graph, get_adj_and_degrees, generate_sampled_graph_and_labels, perturb_data
 
 
@@ -27,60 +27,122 @@ class RGCNEngine(Engine):
 
         self.adj_list, self.degrees = get_adj_and_degrees(self.num_nodes, self.graph_data)
 
-    def provide_train_data(self) -> Tuple[Graph, DataLoader]:
-        super().provide_train_data()
+    def build_model(self, *inputs, **kwargs) -> Model:
+        return RGCN(num_nodes=self.num_nodes,
+                    hidden_dim=self.config.hidden_dim,
+                    num_relations=self.num_relations,
+                    num_bases=self.config.num_bases,
+                    dropout=self.config.loop_dropout,
+                    num_layers=self.config.num_rgcn_layers,
+                    node_regularization_param=self.config.embedding_decay,
+                    regularizer=self.config.rgcn_regularizer)
 
-        graph, node_id, edge_type, node_norm, data, labels = \
-            generate_sampled_graph_and_labels(self.graph_data,
-                                              self.config.graph_sample_size,
-                                              self.config.train_graph_split,
-                                              self.num_relations,
-                                              self.adj_list,
-                                              self.degrees,
-                                              self.config.negative_sample_factor)
+    def run(self):
+        self.train(self.config.num_epochs)
+        self.test()
 
-        node_id = torch.from_numpy(node_id).view(-1, 1).long()
-        edge_type = torch.from_numpy(edge_type)
-        node_norm = torch.from_numpy(node_norm).view(-1, 1)
-        graph.ndata.update({"id": node_id, "norm": node_norm})
-        graph.edata["type"] = edge_type
+    def train(self, num_epochs: int):
+        best_mrr = float("-inf")
 
-        dataset = Loader.build(data, labels, batch_size=self.config.train_batch_size)
-        return graph, dataset
+        for epoch in range(num_epochs):
+            self.logger.info(f"Starting epoch {epoch + 1}...")
 
-    def provide_valid_data(self) -> Tuple[Graph, DataLoader]:
-        super().provide_valid_data()
-        triplets = perturb_data(self.valid_data.T).T
-        targets = triplets[:, 2]
+            # ==========================================================================================================
+            # Training
+            # ==========================================================================================================
+            self.logger.info("Sampling graph and training data...")
+            graph, node_id, edge_type, node_norm, train_data, train_labels = \
+                generate_sampled_graph_and_labels(self.graph_data,
+                                                  self.config.graph_sample_size,
+                                                  self.config.train_graph_split,
+                                                  self.num_relations,
+                                                  self.adj_list,
+                                                  self.degrees,
+                                                  self.config.negative_sample_factor)
 
-        dataset = Loader.build(triplets, targets, batch_size=self.config.test_batch_size)
-        return self.test_graph, dataset
+            node_id = torch.from_numpy(node_id).view(-1, 1).long()
+            edge_type = torch.from_numpy(edge_type)
+            node_norm = torch.from_numpy(node_norm).view(-1, 1)
+            graph.ndata.update({"id": node_id, "norm": node_norm})
+            graph.edata["type"] = edge_type
 
-    def provide_test_data(self) -> Tuple[Graph, DataLoader]:
-        super().provide_test_data()
-        triplets = perturb_data(self.test_data.T).T
-        targets = triplets[:, 2]
+            model = self.model
+            optimizer = self.optimizer
+            optimizer.zero_grad()
 
-        dataset = Loader.build(triplets, targets, batch_size=self.config.test_batch_size)
-        return self.test_graph, dataset
+            graph.to(self.device)
+            model.to(device=self.device)
+            model.train()
 
-    def setup_model(self, from_path: str = None):
-        super().setup_model(from_path)
+            train_data = torch.from_numpy(train_data).long().to(device=self.device)
+            train_labels = torch.from_numpy(train_labels).float().to(device=self.device)
 
-        self.logger.info("Setting up model...")
+            loss = model.loss(train_data, train_labels, graph)
+            loss.backward()
 
-        self.model = RGCN(num_nodes=self.num_nodes,
-                          hidden_dim=self.config.hidden_dim,
-                          num_relations=self.num_relations,
-                          num_bases=self.config.num_bases,
-                          dropout=self.config.loop_dropout,
-                          num_layers=self.config.num_rgcn_layers,
-                          node_regularization_param=self.config.embedding_decay,
-                          regularizer=self.config.rgcn_regularizer)
+            optimizer.step()
 
-        if from_path is not None:
-            self.logger.info(f"Loading weights from {from_path}.")
-            state_dict = torch.load(from_path)
-            self.model.load_state_dict(state_dict)
+            loss = loss.detach().cpu().item()
 
-        self.logger.info("Finished setting up RGCN model.")
+            self.logger.info(f"Training for epoch {epoch + 1} completed, loss: {loss}.")
+            self.tensorboard.add_scalar("train/loss", loss, epoch)
+
+            # ==========================================================================================================
+            # Validation
+            # ==========================================================================================================
+            if epoch % self.config.validate_interval == 0:
+                self.logger.info("Performing validation on development set...")
+                valid_data = perturb_data(self.valid_data.T).T
+                valid_result = self.loop_through_data_for_eval(dataset=valid_data,
+                                                               model=model,
+                                                               graph=self.test_graph,
+                                                               batch_size=self.config.test_batch_size)
+                valid_mrr = valid_result.calculate_mrr().item()
+
+                self.logger.info(f"Validation completed for epoch {epoch + 1}, results: ")
+                self.pretty_print_results(valid_result, "dev", epoch)
+
+                if valid_mrr > best_mrr:
+                    self.logger.info(f"Better MRR ({round(valid_mrr, 6)} > {round(best_mrr, 6)})!")
+                    best_mrr = valid_mrr
+                    self.save_current_model()
+
+    def test(self):
+        self.logger.info(f"Loading model with best MRR...")
+        self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
+
+        self.logger.info("Starting testing...")
+        test_data = perturb_data(self.test_data.T).T
+        test_result = self.loop_through_data_for_eval(dataset=test_data,
+                                                      graph=self.test_graph,
+                                                      model=self.model,
+                                                      batch_size=self.config.test_batch_size)
+
+        self.logger.info("Testing completed! Results:")
+        self.pretty_print_results(test_result, "test")
+
+        self.logger.info("Saving results...")
+        test_result.save_state(self.result_path)
+
+    @torch.no_grad()
+    def loop_through_data_for_eval(self,
+                                   dataset: np.ndarray,  # assuming batch_size * 3
+                                   model: Model,
+                                   graph: Graph,
+                                   batch_size: int) -> Result:
+        graph.to(self.device)
+        model.to(device=self.device)
+        model.eval()
+
+        result = Result()
+
+        num_batches = ceil(batch_size / len(dataset))
+        for batch_idx in range(num_batches):
+            start_idx, end_idx = batch_idx * batch_size, batch_idx * batch_size + batch_size
+            batch = torch.from_numpy(dataset[start_idx:end_idx]).long().to(device=self.device)
+            labels = batch[:, 2]  # the objects in <subject, relation, object>
+
+            scores = model(batch, graph)
+            result.append(scores.cpu(), labels.cpu())
+
+        return result

@@ -10,7 +10,7 @@ class Dataset(Object):
     def __init__(self, dataset_path):
         super().__init__()
 
-        self.triplets = {
+        triplets = {
             "train": Dataset.load_triplets_from_file(f"{dataset_path}/train.txt"),
             "valid": Dataset.load_triplets_from_file(f"{dataset_path}/dev.txt"),
             "test": Dataset.load_triplets_from_file(f"{dataset_path}/test.txt"),
@@ -21,7 +21,7 @@ class Dataset(Object):
         entities = []
         relations = []
 
-        for _, value in self.triplets.items():
+        for _, value in triplets.items():
             src, rel, dst = value
             entities.extend(src)
             entities.extend(dst)
@@ -43,11 +43,11 @@ class Dataset(Object):
             self.relation_vocab[relation] = idx
 
         self.data = {
-            "train": self.triplets_to_idx(self.triplets["train"]),
-            "valid": self.triplets_to_idx(self.triplets["valid"]),
-            "test": self.triplets_to_idx(self.triplets["test"]),
-            "graph": self.triplets_to_idx(self.triplets["graph"]),
-            "old_graph": self.triplets_to_idx(self.triplets["old_graph"])
+            "train": self.triplets_to_idx(triplets["train"]),
+            "valid": self.triplets_to_idx(triplets["valid"]),
+            "test": self.triplets_to_idx(triplets["test"]),
+            "graph": self.triplets_to_idx(triplets["graph"]),
+            "old_graph": self.triplets_to_idx(triplets["old_graph"])
         }
 
     def get(self, split: str) -> np.ndarray:

@@ -26,7 +26,11 @@ class Result(Object):
 
     def save_state(self, file_path: str):
         if file_path == "":
-            self.logger.info("Result file path is emtpy, skipping save state.")
+            self.logger.warning("Result file path is emtpy, skipping saving state.")
+            return
+
+        if not self.config.save_result:
+            self.logger.warning("Configuration save-result is set to false, skipping saving state.")
             return
 
         with open(file_path, "wb") as file:

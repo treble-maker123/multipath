@@ -6,11 +6,10 @@ import torch
 import yaml
 
 from config import config, unknown, logger, tensorboard
-from lib.engines import Engine, RGCNEngine, MessageFlowLinkPredictEngine, PathTransformLinkPredictEngine
+from lib.engines import Engine, RGCNEngine, PathTransformLinkPredictEngine
 
 ENGINE_TYPES: Dict[str, Type[Engine]] = {
     "rgcn": RGCNEngine,
-    "message-flow-link-predict": MessageFlowLinkPredictEngine,
     "path-transform-link-predict": PathTransformLinkPredictEngine
 }
 
@@ -33,10 +32,7 @@ if __name__ == "__main__":
                     f"Unknown arguments received: {unknown}.")
 
         start_time = time()
-
-        engine.train(config.num_epochs)
-        engine.test()
-
+        engine.run()
         end_time = time()
 
         tensorboard.close()

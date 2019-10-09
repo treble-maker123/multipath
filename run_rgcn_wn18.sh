@@ -18,9 +18,9 @@ export cmd="python3 main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---no-write-tensorboard \
---no-save-model \
---no-save-result \
+--write-tensorboard \
+--save-model \
+--save-result \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/WN18 \
@@ -30,7 +30,6 @@ export cmd="python3 main.py \
 --num-bases=2 \
 --hidden-dim=140 \
 --validate-interval=400 \
---train-batch-size=2147483648 \
 --test-batch-size=200 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \

@@ -30,12 +30,11 @@ export cmd="python3 main.py \
 --num-bases=100 \
 --hidden-dim=500 \
 --validate-interval=500 \
---train-batch-size=2147483648 \
---test-batch-size=370 \
+--test-batch-size=120 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
 --embedding-decay=0.01 \
---rgcn-regularizer=basis"
+--rgcn-regularizer=bdd"
 
 echo ""
 echo "Executing \"$cmd\""

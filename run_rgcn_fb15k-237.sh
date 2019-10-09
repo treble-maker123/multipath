@@ -10,7 +10,7 @@
 #SBATCH --gres=gpu:1
 
 # For debugging device-side assert errors
-# export CUDA_LAUNCH_BLOCKING=1
+export CUDA_LAUNCH_BLOCKING=1
 
 # To make a boolean option False, simply prefix with "no-"
 export cmd="python3 main.py \
@@ -18,9 +18,9 @@ export cmd="python3 main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---no-write-tensorboard \
---no-save-model \
---no-save-result \
+--write-tensorboard \
+--save-model \
+--save-result \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/FB15K-237 \
@@ -30,8 +30,7 @@ export cmd="python3 main.py \
 --num-bases=100 \
 --hidden-dim=500 \
 --validate-interval=500 \
---train-batch-size=2147483648 \
---test-batch-size=370 \
+--test-batch-size=700 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
 --embedding-decay=0.01 \

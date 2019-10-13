@@ -24,11 +24,11 @@ export cmd="python3 main.py \
 --use-gpu \
 --engine=path-transform-link-predict \
 --dataset-path=data/FB15K-237 \
---data-size 10 \
---num-epochs=2 \
+--data-size=-1 \
+--num-epochs=200 \
 --num-workers=6 \
 --train-batch-size=1 \
---validate-interval=2 \
+--validate-interval=10 \
 --run-train-during-validate \
 --test-batch-size=1 \
 --max-traversal-hops 2"

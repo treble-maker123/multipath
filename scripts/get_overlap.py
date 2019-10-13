@@ -1,5 +1,5 @@
 dataset_path = "data/FB15K-237"
-first_fname = "train"
+first_fname = "full_graph"
 second_fname = "graph"
 
 if __name__ == "__main__":

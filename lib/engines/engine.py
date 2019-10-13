@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Iterable, Dict
+from typing import Optional, Iterable, Dict, Tuple, List
 
+import numpy as np
 import torch
 import torch.optim as optim
 
@@ -9,6 +10,8 @@ from lib import Object
 from lib.models import Model
 from lib.types import Optimizer
 from lib.utils import Dataset, Result
+from lib.utils import Graph
+from lib.utils.dgl_utils import build_test_graph, get_adj_and_degrees
 
 
 class Engine(Object, ABC):
@@ -16,16 +19,7 @@ class Engine(Object, ABC):
         Object.__init__(self)
         ABC.__init__(self)
 
-        # dataset setup
         self.dataset: Optional[Dataset] = Dataset(self.config.dataset_path)
-        self.num_nodes = self.dataset.num_entities
-        self.num_relations = self.dataset.num_relations
-        self.train_data = self.dataset.get("train").T
-        self.valid_data = self.dataset.get("valid").T
-        self.test_data = self.dataset.get("test").T
-        self.graph_data = self.dataset.get("graph").T
-
-        # model setup
         self.model: Optional[Model] = self.build_model()
         self.optimizer: Optional[Optimizer] = Engine.build_optimizer(**self.build_optimizer_params())
 
@@ -51,17 +45,48 @@ class Engine(Object, ABC):
         result_path = self.config.saved_result_path
         return f"{result_path}/{self.config.run_id}.pt" if result_path != "" else ""
 
-    # ==================================================================================================================
-    # Abstract method
-    # ==================================================================================================================
+    @property
+    def train_data(self) -> np.ndarray:
+        data = self.dataset.get("train").T
+        return data if self.config.data_size == -1 else data[:self.config.data_size]
 
-    @abstractmethod
-    def build_model(self, *inputs, **kwargs) -> Model:
-        pass
+    @property
+    def valid_data(self) -> np.ndarray:
+        data = self.dataset.get("valid").T
+        return data if self.config.data_size == -1 else data[:self.config.data_size]
 
-    @abstractmethod
-    def run(self):
-        pass
+    @property
+    def test_data(self) -> np.ndarray:
+        data = self.dataset.get("test").T
+        return data if self.config.data_size == -1 else data[:self.config.data_size]
+
+    @property
+    def graph_data(self) -> np.ndarray:
+        return self.dataset.get("graph").T
+
+    @property
+    def full_graph_data(self) -> np.ndarray:
+        return self.dataset.get("full_graph").T
+
+    @property
+    def num_nodes(self) -> int:
+        return self.dataset.num_entities
+
+    @property
+    def num_relations(self) -> int:
+        return self.dataset.num_relations
+
+    def build_graph(self, graph_data: np.ndarray) -> Tuple[Graph, List[np.ndarray], np.ndarray]:
+        graph, relations, norm = \
+            build_test_graph(self.num_nodes, self.num_relations, graph_data, inverse=False)
+        graph.ndata.update({
+            "id": torch.arange(0, self.num_nodes, dtype=torch.long).view(-1, 1),
+            "norm": torch.from_numpy(norm).view(-1, 1)
+        })
+        graph.edata['type'] = torch.from_numpy(relations)
+        adj_list, degrees = get_adj_and_degrees(self.num_nodes, graph_data)
+
+        return graph, adj_list, degrees
 
     def save_current_model(self) -> None:
         if not self.config.save_model:
@@ -89,6 +114,18 @@ class Engine(Object, ABC):
             "Top 3": top_3,
             "Top 10": top_10
         }, epoch)
+
+    # ==================================================================================================================
+    # Abstract methods
+    # ==================================================================================================================
+
+    @abstractmethod
+    def build_model(self, *inputs, **kwargs) -> Model:
+        pass
+
+    @abstractmethod
+    def run(self) -> None:
+        pass
 
     # ==================================================================================================================
     # Optimizer methods

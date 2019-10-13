@@ -48,6 +48,9 @@ class Model(Module, ABC):
         """Creates a subgraph consists of all paths going from src_node_id to dst_node_id, where src_node_id node
         contains only out-edges and dst_node_id node contains only in-edges.
 
+        Notes:
+            Node ID here is the same as the the entity IDs.
+
         Args:
             src_node_id: Node ID of the source node
             dst_node_id: Node ID of the destination node

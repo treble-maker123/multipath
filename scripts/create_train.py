@@ -6,7 +6,7 @@ from random import sample
 
 from utils import read_file_to_data, list_to_triplets
 
-dataset_path = "data/WN18"
+dataset_path = "data/FB15K-237"
 
 dev_path = f"{dataset_path}/dev.txt"
 test_path = f"{dataset_path}/test.txt"

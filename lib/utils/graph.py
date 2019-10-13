@@ -19,7 +19,7 @@ class Graph(Object, DGLGraph):
         self.set_n_initializer(zero_initializer)
         self.set_e_initializer(zero_initializer)
 
-        self.logger.info(f"Constructed graph with {num_nodes} nodes and {num_relations} edges.")
+        self.logger.info(f"Constructed graph with {num_nodes} nodes and {num_relations} relation types.")
 
     def compute_degree_norm(self) -> np.ndarray:
         num_nodes = self.number_of_nodes()

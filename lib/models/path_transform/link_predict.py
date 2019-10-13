@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,8 +36,8 @@ class LinkPredict(Model):
             nn.Linear(hidden_dim, num_relations + 1)
         ])
 
-    def forward(self, data: Tensor, graph: Graph, **kwargs) -> Tensor:
-        src_node_id, dst_node_id = data.T
+    def forward(self, triplet: Tensor, graph: Graph, **kwargs) -> Tensor:
+        src_node_id, _, dst_node_id = triplet
         paths = kwargs.get("subgraph")
         mask_tensors = kwargs.get("masks")
 
@@ -50,8 +48,6 @@ class LinkPredict(Model):
 
         mask_tensors = mask_tensors.squeeze(0)
 
-        # embed the paths with transformer
-        paths = list(map(lambda x: torch.tensor(x, dtype=torch.long), paths))
         # out: batch_size * path_length * hidden_dim
         path_tensors = torch.stack(list(map(self.embed_path, paths)))
         # out: path_length * batch_size * hidden_dim
@@ -78,17 +74,6 @@ class LinkPredict(Model):
         # NOTE: unsqueeze(0) because of batch_size=1
         return self.linear_layers(path_embedding).unsqueeze(0)
 
-    def loss(self, data: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
-        scores = self.forward(data, graph, **kwargs)
+    def loss(self, triplet: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
+        scores = self.forward(triplet, graph, **kwargs)
         return F.cross_entropy(scores, labels.long())
-
-    def _pad_to_max_length(self, path: Tuple[int], max_length: int) -> Tuple[Tuple[int], Tensor]:
-        num_to_pad = (max_length - len(path))
-        # divide by 2 because extension consists of 2 elements
-        padded_path = path + tuple(self.extension_PAD * (num_to_pad // 2))
-        mask = torch.zeros(max_length, dtype=torch.bool)
-
-        if num_to_pad > 0:
-            mask[-num_to_pad:] = 1
-
-        return padded_path, mask

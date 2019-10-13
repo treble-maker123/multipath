@@ -2,30 +2,18 @@ from math import ceil
 
 import numpy as np
 import torch
+from torch.nn.utils import clip_grad_norm_
 
 from lib.engines import Engine
 from lib.models import Model, RGCN
 from lib.utils import Graph, Result
-from lib.utils.dgl_utils import build_test_graph, get_adj_and_degrees, generate_sampled_graph_and_labels, perturb_data
+from lib.utils.dgl_utils import generate_sampled_graph_and_labels, perturb_data
 
 
 class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
-        # loads the old_graph because the old_graph contains all of the triplets, which is okay for RGCN because RGCN
-        # samples training data from the graph
-        self.graph_data = self.dataset.get("old_graph").T
-
-        # setting inverse to false because the graph file already contains inverted edges
-        self.test_graph, test_relations, test_norm = \
-            build_test_graph(self.num_nodes, self.num_relations, self.graph_data, inverse=False)
-        self.test_graph.ndata.update({
-            "id": torch.arange(0, self.num_nodes, dtype=torch.long).view(-1, 1),
-            "norm": torch.from_numpy(test_norm).view(-1, 1)
-        })
-        self.test_graph.edata['type'] = torch.from_numpy(test_relations)
-
-        self.adj_list, self.degrees = get_adj_and_degrees(self.num_nodes, self.graph_data)
+        self.test_graph, self.adj_list, self.degrees = self.build_graph(self.full_graph_data)
 
     def build_model(self, *inputs, **kwargs) -> Model:
         return RGCN(num_nodes=self.num_nodes,
@@ -37,7 +25,7 @@ class RGCNEngine(Engine):
                     node_regularization_param=self.config.embedding_decay,
                     regularizer=self.config.rgcn_regularizer)
 
-    def run(self):
+    def run(self) -> None:
         self.train(self.config.num_epochs)
         self.test()
 
@@ -52,7 +40,7 @@ class RGCNEngine(Engine):
             # ==========================================================================================================
             self.logger.info("Sampling graph and training data...")
             graph, node_id, edge_type, node_norm, train_data, train_labels = \
-                generate_sampled_graph_and_labels(self.graph_data,
+                generate_sampled_graph_and_labels(self.full_graph_data,
                                                   self.config.graph_sample_size,
                                                   self.config.train_graph_split,
                                                   self.num_relations,
@@ -79,6 +67,7 @@ class RGCNEngine(Engine):
 
             loss = model.loss(train_data, train_labels, graph)
             loss.backward()
+            clip_grad_norm_(model.parameters(), self.config.grad_norm)
 
             optimizer.step()
 
@@ -107,7 +96,7 @@ class RGCNEngine(Engine):
                     best_mrr = valid_mrr
                     self.save_current_model()
 
-    def test(self):
+    def test(self) -> Result:
         self.logger.info(f"Loading model with best MRR...")
         self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
 
@@ -123,6 +112,8 @@ class RGCNEngine(Engine):
 
         self.logger.info("Saving results...")
         test_result.save_state(self.result_path)
+
+        return test_result
 
     @torch.no_grad()
     def loop_through_data_for_eval(self,

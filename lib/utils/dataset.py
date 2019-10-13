@@ -1,6 +1,7 @@
 import numpy as np
 
 from lib import Object, Triplets
+from typing import Dict
 
 
 class Dataset(Object):
@@ -15,7 +16,7 @@ class Dataset(Object):
             "valid": Dataset.load_triplets_from_file(f"{dataset_path}/dev.txt"),
             "test": Dataset.load_triplets_from_file(f"{dataset_path}/test.txt"),
             "graph": Dataset.load_triplets_from_file(f"{dataset_path}/graph.txt"),
-            "old_graph": Dataset.load_triplets_from_file(f"{dataset_path}/old_graph.txt")
+            "full_graph": Dataset.load_triplets_from_file(f"{dataset_path}/full_graph.txt")
         }
 
         entities = []
@@ -29,11 +30,9 @@ class Dataset(Object):
 
         self.unique_entities = list(set(entities))
         self.unique_relations = list(set(relations))
-        self.num_entities = len(self.unique_entities)
-        self.num_relations = len(self.unique_relations)
 
         self.logger.info(f"Constructed {dataset_path} dataset with {self.num_entities} entities and "
-                         f"{self.num_relations}.")
+                         f"{self.num_relations} relation types.")
 
         self.entity_vocab, self.relation_vocab = {}, {}
 
@@ -47,8 +46,20 @@ class Dataset(Object):
             "valid": self.triplets_to_idx(triplets["valid"]),
             "test": self.triplets_to_idx(triplets["test"]),
             "graph": self.triplets_to_idx(triplets["graph"]),
-            "old_graph": self.triplets_to_idx(triplets["old_graph"])
+            "full_graph": self.triplets_to_idx(triplets["full_graph"])
         }
+
+    @property
+    def num_entities(self) -> int:
+        return len(self.unique_entities)
+
+    @property
+    def num_relations(self) -> int:
+        return len(self.unique_relations)
+
+    @property
+    def entity_id_to_string_dict(self) -> Dict[int, str]:
+        return dict((v, k) for k, v in self.entity_vocab.items())
 
     def get(self, split: str) -> np.ndarray:
         return self.data[split]

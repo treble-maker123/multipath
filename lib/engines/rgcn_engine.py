@@ -13,7 +13,7 @@ from lib.utils.dgl_utils import generate_sampled_graph_and_labels, perturb_data
 class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
-        self.test_graph, self.adj_list, self.degrees = self.build_graph(self.full_graph_data)
+        self.test_graph, self.adj_list, self.degrees = self.build_graph(self.graph_data)
 
     def build_model(self, *inputs, **kwargs) -> Model:
         return RGCN(num_nodes=self.num_nodes,
@@ -40,7 +40,7 @@ class RGCNEngine(Engine):
             # ==========================================================================================================
             self.logger.info("Sampling graph and training data...")
             graph, node_id, edge_type, node_norm, train_data, train_labels = \
-                generate_sampled_graph_and_labels(self.full_graph_data,
+                generate_sampled_graph_and_labels(self.graph_data,
                                                   self.config.graph_sample_size,
                                                   self.config.train_graph_split,
                                                   self.num_relations,

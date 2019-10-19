@@ -7,15 +7,18 @@ from lib.models import Model
 from lib.models.path_transform.embedding import PathEmbedding
 from lib.utils import Graph
 
+counter = 0
+
 
 class LinkPredict(Model):
-    def __init__(self, max_hops: int, num_entities: int, num_relations: int,
+    def __init__(self,
+                 num_entities: int,
+                 num_relations: int,
                  hidden_dim: int,
                  num_att_heads: int,
                  num_transformer_layers: int):
         super().__init__()
 
-        self.max_hops = max_hops
         self.num_entities = num_entities
         self.num_relations = num_relations
         self.entity_PAD = num_entities
@@ -23,8 +26,8 @@ class LinkPredict(Model):
         self.extension_PAD = [self.relation_PAD, self.entity_PAD]
         self.hidden_dim = hidden_dim
 
-        # +1 for padding
-        self.embed_path = PathEmbedding(num_entities + 1, num_relations + 1, hidden_dim)
+        # +2 for padding and CLS, + 1 for padding
+        self.embed_path = PathEmbedding(num_entities + 2, num_relations + 1, hidden_dim)
 
         encoder_layer = nn.TransformerEncoderLayer(hidden_dim, num_att_heads, hidden_dim)
         encoder_norm = nn.LayerNorm(hidden_dim)
@@ -37,36 +40,34 @@ class LinkPredict(Model):
         ])
 
     def forward(self, triplet: Tensor, graph: Graph, **kwargs) -> Tensor:
-        src_node_id, _, dst_node_id = triplet
-        paths = kwargs.get("subgraph")
-        mask_tensors = kwargs.get("masks")
+        src_node_id, _, dst_node_id = triplet.T
+        paths = kwargs.get("paths")  # out: num_paths * path-length
+        mask_tensors = kwargs.get("masks")  # out: num_paths * path-length
 
         if len(paths) == 0:
             scores = torch.zeros(1, self.num_relations + 1)
             scores[-1] = 1
             return scores
 
-        mask_tensors = mask_tensors.squeeze(0)
-
         # out: batch_size * path_length * hidden_dim
-        path_tensors = torch.stack(list(map(self.embed_path, paths)))
+        path_tensors = self.embed_path(paths)
         # out: path_length * batch_size * hidden_dim
         path_tensors = path_tensors.permute(1, 0, 2)
         # out: path_length * batch_size * hidden_dim
         path_embedding = self.transform(path_tensors, src_key_padding_mask=mask_tensors)
 
-        avg_path_embedding = path_embedding.mean(dim=0)  # out: batch_size * hidden_dim
+        path_cls_embedding = path_embedding[0]  # out: batch_size * hidden_dim
 
         # calculating attention of paths conditioned on the original source and destination node representation
         src_embedding = self.embed_path.embed_entities(src_node_id)  # out: 1 * hidden_dim
         dst_embedding = self.embed_path.embed_entities(dst_node_id)  # out: 1 * hidden_dim
 
         # out: batch_size
-        attention_weights = (src_embedding * avg_path_embedding * dst_embedding).sum(dim=1)
+        attention_weights = (src_embedding * path_cls_embedding * dst_embedding).sum(dim=1)
         # out: batch_size
         attention_scores = torch.sigmoid(attention_weights)  # softmax over a large number might hinder training
         # out: path_length * batch_size * hidden_dim
-        attended_path_embedding = avg_path_embedding * attention_scores.unsqueeze(1)
+        attended_path_embedding = path_cls_embedding * attention_scores.unsqueeze(1)
 
         # out: batch_size * hidden_dim
         path_embedding = attended_path_embedding.mean(dim=0)

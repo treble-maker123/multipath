@@ -65,10 +65,6 @@ class Engine(Object, ABC):
         return self.dataset.get("graph").T
 
     @property
-    def full_graph_data(self) -> np.ndarray:
-        return self.dataset.get("full_graph").T
-
-    @property
     def num_nodes(self) -> int:
         return self.dataset.num_entities
 

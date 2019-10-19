@@ -11,6 +11,9 @@ from tensorboardX import SummaryWriter
 def add_custom_config(parser: ArgumentParser) -> ArgumentParser:
     parser.add_argument("--max-traversal-hops", type=int,
                         default=2, help="Maximum number of hops to make when enumerating paths between two nodes.")
+    parser.add_argument("--max-paths", type=int,
+                        default=10000, help="Maximum number of paths to consider, if more paths are present, max "
+                                            "number of paths are sampled.")
 
     return parser
 

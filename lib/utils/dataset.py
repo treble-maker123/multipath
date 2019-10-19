@@ -1,7 +1,8 @@
+from typing import Dict
+
 import numpy as np
 
 from lib import Object, Triplets
-from typing import Dict
 
 
 class Dataset(Object):
@@ -15,8 +16,7 @@ class Dataset(Object):
             "train": Dataset.load_triplets_from_file(f"{dataset_path}/train.txt"),
             "valid": Dataset.load_triplets_from_file(f"{dataset_path}/dev.txt"),
             "test": Dataset.load_triplets_from_file(f"{dataset_path}/test.txt"),
-            "graph": Dataset.load_triplets_from_file(f"{dataset_path}/graph.txt"),
-            "full_graph": Dataset.load_triplets_from_file(f"{dataset_path}/full_graph.txt")
+            "graph": Dataset.load_triplets_from_file(f"{dataset_path}/graph.txt")
         }
 
         entities = []
@@ -45,8 +45,7 @@ class Dataset(Object):
             "train": self.triplets_to_idx(triplets["train"]),
             "valid": self.triplets_to_idx(triplets["valid"]),
             "test": self.triplets_to_idx(triplets["test"]),
-            "graph": self.triplets_to_idx(triplets["graph"]),
-            "full_graph": self.triplets_to_idx(triplets["full_graph"])
+            "graph": self.triplets_to_idx(triplets["graph"])
         }
 
     @property
@@ -60,6 +59,10 @@ class Dataset(Object):
     @property
     def entity_id_to_string_dict(self) -> Dict[int, str]:
         return dict((v, k) for k, v in self.entity_vocab.items())
+
+    @property
+    def relation_id_to_string_dict(self) -> Dict[int, str]:
+        return dict((v, k) for k, v in self.relation_vocab.items())
 
     def get(self, split: str) -> np.ndarray:
         return self.data[split]

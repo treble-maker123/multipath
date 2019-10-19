@@ -4,6 +4,7 @@ from typing import List, Iterable
 from typing import Union, Tuple
 
 import torch
+from pdb import set_trace
 
 enumerate_path_correct_size = torch.Size([2, 1])
 

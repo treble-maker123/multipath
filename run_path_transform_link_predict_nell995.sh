@@ -23,15 +23,14 @@ export cmd="python3 main.py \
 --no-save-result \
 --use-gpu \
 --engine=path-transform-link-predict \
---dataset-path=data/FB15K-237 \
+--dataset-path=data/nell-995 \
 --data-size=-1 \
 --num-epochs=200 \
---num-workers=6 \
---train-batch-size=1 \
+--num-workers=4 \
+--train-batch-size=16 \
+--hidden-dim=300 \
 --validate-interval=10 \
---run-train-during-validate \
---test-batch-size=1 \
---max-traversal-hops 2"
+--max-paths=10000"
 
 echo ""
 echo "Executing \"$cmd\""

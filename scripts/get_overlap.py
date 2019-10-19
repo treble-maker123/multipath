@@ -1,6 +1,6 @@
-dataset_path = "data/FB15K-237"
-first_fname = "full_graph"
-second_fname = "graph"
+dataset_path = "data/nell-995"
+first_fname = "graph"
+second_fname = "train"
 
 if __name__ == "__main__":
     first_file_path = f"{dataset_path}/{first_fname}.txt"

@@ -1,6 +1,6 @@
 dataset_path = "data/nell-995"
 first_fname = "graph"
-second_fname = "train"
+second_fname = "dev"
 
 if __name__ == "__main__":
     first_file_path = f"{dataset_path}/{first_fname}.txt"

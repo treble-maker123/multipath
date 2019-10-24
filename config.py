@@ -9,11 +9,13 @@ from tensorboardX import SummaryWriter
 
 
 def add_custom_config(parser: ArgumentParser) -> ArgumentParser:
-    parser.add_argument("--max-traversal-hops", type=int,
-                        default=2, help="Maximum number of hops to make when enumerating paths between two nodes.")
-    parser.add_argument("--max-paths", type=int,
-                        default=10000, help="Maximum number of paths to consider, if more paths are present, max "
-                                            "number of paths are sampled.")
+    parser.add_argument("--max-traversal-hops", type=int, default=2,
+                        help="Maximum number of hops to make when enumerating paths between two nodes.")
+    parser.add_argument("--max-paths", type=int, default=10000,
+                        help="Maximum number of paths to consider, if more paths are present, max number of paths are "
+                             "sampled.")
+    parser.add_argument("--bucket-size", type=int, default=32000,
+                        help="The maximum size of the bucket for grouping paths")
 
     return parser
 
@@ -42,6 +44,10 @@ def add_rgcn_config(parser: ArgumentParser) -> ArgumentParser:
 def add_model_config(parser: ArgumentParser):
     parser.add_argument("--hidden-dim", type=int,
                         default=500, help="Number of units for the node/entity representation.")
+    parser.add_argument("--num-transformer-layers", type=int, default=2,
+                        help="Number of transformer layers to use.")
+    parser.add_argument("--num-attention-heads", type=int, default=6,
+                        help="Number of attention heads in the transformer.")
     parser.add_argument("--learn-rate", type=float,
                         default=0.01, help="Learning rate for the model.")
     parser.add_argument("--weight-decay", type=float,

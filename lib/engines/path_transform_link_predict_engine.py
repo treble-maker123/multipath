@@ -2,11 +2,12 @@ import pickle
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from lib.engines import Engine
 from lib.models import Model, PathTransformLinkPredict
 from lib.utils import Graph, Result, PathLoader
-from tqdm import tqdm
+from lib.utils.collate_fn import paths_stack_collate
 
 
 class PathTransformLinkPredictEngine(Engine):
@@ -34,28 +35,42 @@ class PathTransformLinkPredictEngine(Engine):
         return PathTransformLinkPredict(num_entities=self.num_nodes,
                                         num_relations=self.num_relations,
                                         hidden_dim=self.config.hidden_dim,
-                                        num_att_heads=5,
-                                        num_transformer_layers=1)
+                                        num_att_heads=self.config.num_attention_heads,
+                                        num_transformer_layers=self.config.num_transformer_layers)
 
     def run(self) -> None:
         self.train(self.config.num_epochs)
         self.test()
 
     def train(self, num_epochs: int) -> None:
-        train_batch_size = self.config.train_batch_size
         best_mrr = float("-inf")
         train_loader = PathLoader.build(data=self.train_data,
                                         dataset=self.dataset,
                                         manifest=self.train_manifest,
                                         cls_token=self.cls_token,
                                         entity_mapping=self.entity_mapping,
-                                        relation_mapping=self.relation_mapping)
+                                        relation_mapping=self.relation_mapping,
+                                        batch_size=self.config.train_batch_size,
+                                        num_workers=self.config.num_workers,
+                                        collate_fn=paths_stack_collate)
+        valid_train_loader = PathLoader.build(data=self.train_data,
+                                              dataset=self.dataset,
+                                              manifest=self.train_manifest,
+                                              cls_token=self.cls_token,
+                                              entity_mapping=self.entity_mapping,
+                                              relation_mapping=self.relation_mapping,
+                                              batch_size=self.config.test_batch_size,
+                                              num_workers=self.config.num_workers,
+                                              collate_fn=paths_stack_collate)
         valid_loader = PathLoader.build(data=self.valid_data,
                                         dataset=self.dataset,
                                         manifest=self.valid_manifest,
                                         cls_token=self.cls_token,
                                         entity_mapping=self.entity_mapping,
-                                        relation_mapping=self.relation_mapping)
+                                        relation_mapping=self.relation_mapping,
+                                        batch_size=self.config.test_batch_size,
+                                        num_workers=self.config.num_workers,
+                                        collate_fn=paths_stack_collate)
 
         for epoch in range(num_epochs):
             self.logger.info(f"Starting epoch {epoch + 1}...")
@@ -67,30 +82,37 @@ class PathTransformLinkPredictEngine(Engine):
             model = self.model
             model.to(device=self.device)
             model.train()
+
             epoch_losses = []
-            batch_losses = []
-            batch_counter = 0
+            batch_loss = 0.0
+            path_counter = 0
 
-            for idx, (paths, mask, triplet, rel) in enumerate(tqdm(train_loader)):
-                if paths.size() == torch.Size([1, 1]):
-                    continue
+            for idx, (paths, masks, triplets, relations, num_paths) in enumerate(tqdm(train_loader)):
+                bucket_size = self.config.bucket_size
+                bucket_generator = self.train_bucket_generator(paths, masks, triplets, relations, num_paths,
+                                                               max_paths_per_bucket=bucket_size)
+                for p, m, t, r, n in bucket_generator:
+                    assert (p == -1).sum() == 0  # no elements with -1
+                    assert p.shape[0] == n.sum().item()  # correct number of paths
+                    assert m.shape[0] == n.sum().item()  # correct number of masks
 
-                paths = paths.squeeze(dim=0).to(device=self.device)
-                mask = mask.squeeze(dim=0).to(device=self.device)
-                triplet = triplet.squeeze(dim=0).to(device=self.device)
-                label = rel.squeeze(dim=0).to(device=self.device)
+                    p = p.to(device=self.device)
+                    m = m.to(device=self.device)
+                    t = t.to(device=self.device)
+                    r = r.to(device=self.device)
+                    n = n.to(device=self.device)
 
-                loss = model.loss(triplet, label, self.train_graph, paths=paths, masks=mask)
-                loss.backward()
-                batch_losses.append(loss.detach().cpu())
-                batch_counter += 1
+                    loss = model.loss(t, r, self.train_graph, paths=p, masks=m, num_paths=n)
+                    loss.backward()
+                    batch_loss += loss.detach().cpu()
+                    path_counter += len(n)
 
-                if batch_counter == train_batch_size and len(batch_losses) > 0:
-                    # self.logger.info("Backpropagating...")
-                    optimizer.step()
-                    mean_batch_loss = sum(batch_losses) / len(batch_losses)
-                    epoch_losses.append(mean_batch_loss)
-                    batch_counter = 0
+                optimizer.step()
+                batch_loss = batch_loss / path_counter
+                epoch_losses.append(batch_loss)
+
+                batch_loss = 0.0
+                path_counter = 0
 
             avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
             self.logger.info(f"Training for epoch {epoch + 1} completed, avg loss: {avg_epoch_loss}")
@@ -99,11 +121,11 @@ class PathTransformLinkPredictEngine(Engine):
             if epoch % self.config.validate_interval == 0:
                 if self.config.run_train_during_validate:
                     self.logger.info("Performing validation on training set...")
-                    train_result = self.loop_through_data_for_eval(dataset=train_loader,
+                    train_result = self.loop_through_data_for_eval(dataset=valid_train_loader,
                                                                    model=self.model,
                                                                    graph=self.test_graph)
                     self.logger.info(f"Validation on training set completed for epoch {epoch + 1}, results: ")
-                    self.pretty_print_results(train_result, "dev", epoch)
+                    self.pretty_print_results(train_result, "train", epoch)
 
                 self.logger.info("Performing validation on development set...")
                 valid_result = self.loop_through_data_for_eval(dataset=valid_loader,
@@ -123,15 +145,18 @@ class PathTransformLinkPredictEngine(Engine):
     def test(self) -> Result:
         self.logger.info(f"Loading model with best MRR...")
         self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
-        valid_loader = PathLoader.build(data=self.test_data,
-                                        dataset=self.dataset,
-                                        manifest=self.test_manifest,
-                                        cls_token=self.cls_token,
-                                        entity_mapping=self.entity_mapping,
-                                        relation_mapping=self.relation_mapping)
+        test_loader = PathLoader.build(data=self.test_data,
+                                       dataset=self.dataset,
+                                       manifest=self.test_manifest,
+                                       cls_token=self.cls_token,
+                                       entity_mapping=self.entity_mapping,
+                                       relation_mapping=self.relation_mapping,
+                                       batch_size=self.config.test_batch_size,
+                                       num_workers=self.config.num_workers,
+                                       collate_fn=paths_stack_collate)
 
         self.logger.info("Starting testing...")
-        test_result = self.loop_through_data_for_eval(dataset=valid_loader,
+        test_result = self.loop_through_data_for_eval(dataset=test_loader,
                                                       model=self.model,
                                                       graph=self.test_graph)
 
@@ -154,18 +179,89 @@ class PathTransformLinkPredictEngine(Engine):
 
         result = Result()
 
-        for idx, (paths, mask, triplet, rel) in enumerate(dataset):
-            label = rel.squeeze(dim=0).to(device=self.device)
+        for idx, (paths, mask, triplet, relations, num_paths) in enumerate(tqdm(dataset)):
+            label = relations.to(device=self.device)
 
-            if paths.size() == torch.Size([1, 1]):
-                score = torch.randn(1, self.num_relations + 1)
+            if num_paths.size() == torch.Size([1, 1]) and num_paths.item() == 0:
+                score = torch.randn(1, self.num_relations)
             else:
-                paths = paths.squeeze(dim=0).to(device=self.device)
-                mask = mask.squeeze(dim=0).to(device=self.device)
-                triplet = triplet.squeeze(dim=0).to(device=self.device)
+                paths = paths.to(device=self.device)
+                mask = mask.to(device=self.device)
+                triplet = triplet.to(device=self.device)
 
-                score = model(triplet, graph, paths=paths, masks=mask)
+                score = model(triplet, graph, paths=paths, masks=mask, num_paths=num_paths)
 
             result.append(score.cpu(), label.cpu())
 
         return result
+
+    def train_bucket_generator(self,
+                               paths: torch.Tensor,
+                               masks: torch.Tensor,
+                               triplet: torch.Tensor,
+                               relations: torch.Tensor,
+                               num_paths: torch.Tensor,
+                               max_paths_per_bucket: int = 16000):
+        """Divides the input data into buckets with maximum size of max_paths_per_bucket.
+        """
+        bucket = self._create_new_bucket()
+
+        for num_path_tensor in num_paths:
+            num_path: int = num_path_tensor.item()
+
+            # skip the ones without paths
+            if num_path == 0:
+                # they still have a corresponding tensor with -1 values in paths and masks, get rid of those
+                paths = paths[1:]
+                masks = masks[1:]
+                triplet = triplet[1:]
+                relations = relations[1:]
+                continue
+
+            # if adding this triplet will overflow, yield what we have so far
+            if bucket["count"] + num_path > max_paths_per_bucket:
+                yield torch.cat(bucket["paths"]), \
+                      torch.cat(bucket["masks"]), \
+                      torch.stack(bucket["triplet"]), \
+                      torch.stack(bucket["relations"]), \
+                      torch.stack(bucket["num_paths"])
+                bucket = self._create_new_bucket()
+
+            num_paths_before = paths.shape[0]
+
+            # add the current paths to the bucket
+            bucket["count"] += num_path
+            bucket["paths"].append(paths[:num_path])
+            bucket["masks"].append(masks[:num_path])
+            bucket["triplet"] += [triplet[0]] * num_path
+            bucket["relations"].append(relations[0])
+            bucket["num_paths"].append(num_path_tensor)
+
+            # remove those values from the original tensor
+            paths = paths[num_path:]
+            masks = masks[num_path:]
+            triplet = triplet[1:]
+            relations = relations[1:]
+
+            num_paths_after = paths.shape[0]
+
+            assert num_paths_after + num_path == num_paths_before  # correct number of paths removed
+
+        # if there's left over, yield one last time
+        if bucket["count"] > 0:
+            yield torch.cat(bucket["paths"]), \
+                  torch.cat(bucket["masks"]), \
+                  torch.stack(bucket["triplet"]), \
+                  torch.stack(bucket["relations"]), \
+                  torch.stack(bucket["num_paths"])
+
+    @classmethod
+    def _create_new_bucket(cls):
+        return {
+            "count": 0,
+            "paths": [],
+            "masks": [],
+            "triplet": [],
+            "relations": [],
+            "num_paths": []
+        }

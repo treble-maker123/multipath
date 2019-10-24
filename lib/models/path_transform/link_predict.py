@@ -7,8 +7,6 @@ from lib.models import Model
 from lib.models.path_transform.embedding import PathEmbedding
 from lib.utils import Graph
 
-counter = 0
-
 
 class LinkPredict(Model):
     def __init__(self,
@@ -36,13 +34,14 @@ class LinkPredict(Model):
         self.linear_layers = nn.Sequential(*[
             nn.Linear(hidden_dim, hidden_dim),
             nn.LeakyReLU(1e-3),
-            nn.Linear(hidden_dim, num_relations + 1)
+            nn.Linear(hidden_dim, num_relations)
         ])
 
     def forward(self, triplet: Tensor, graph: Graph, **kwargs) -> Tensor:
         src_node_id, _, dst_node_id = triplet.T
         paths = kwargs.get("paths")  # out: num_paths * path-length
         mask_tensors = kwargs.get("masks")  # out: num_paths * path-length
+        num_paths = kwargs.get("num_paths")  # out: batch_size * 1
 
         if len(paths) == 0:
             scores = torch.zeros(1, self.num_relations + 1)
@@ -55,7 +54,7 @@ class LinkPredict(Model):
         path_tensors = path_tensors.permute(1, 0, 2)
         # out: path_length * batch_size * hidden_dim
         path_embedding = self.transform(path_tensors, src_key_padding_mask=mask_tensors)
-
+        # using the CLS token to represent paths
         path_cls_embedding = path_embedding[0]  # out: batch_size * hidden_dim
 
         # calculating attention of paths conditioned on the original source and destination node representation
@@ -65,16 +64,26 @@ class LinkPredict(Model):
         # out: batch_size
         attention_weights = (src_embedding * path_cls_embedding * dst_embedding).sum(dim=1)
         # out: batch_size
-        attention_scores = torch.sigmoid(attention_weights)  # softmax over a large number might hinder training
+        attention_scores = torch.sigmoid(attention_weights)
         # out: path_length * batch_size * hidden_dim
         attended_path_embedding = path_cls_embedding * attention_scores.unsqueeze(1)
 
-        # out: batch_size * hidden_dim
-        path_embedding = attended_path_embedding.mean(dim=0)
+        # summarize multiple paths into one path embedding
+        summarized_path_embeddings = []
+        for num_path in num_paths:
+            triplet_embedding = attended_path_embedding[:num_path]
+            summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
+            attended_path_embedding = attended_path_embedding[num_path:]
 
-        # NOTE: unsqueeze(0) because of batch_size=1
-        return self.linear_layers(path_embedding).unsqueeze(0)
+        # out: batch_size * hidden_dim
+        summarized_path_embeddings = torch.stack(summarized_path_embeddings)
+
+        # out: batch_size * num_classes
+        output = self.linear_layers(summarized_path_embeddings)
+
+        return output
 
     def loss(self, triplet: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
         scores = self.forward(triplet, graph, **kwargs)
+        labels = labels.view(-1)
         return F.cross_entropy(scores, labels.long())

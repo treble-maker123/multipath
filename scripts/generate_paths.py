@@ -15,7 +15,6 @@ from time import time
 import ray
 import pickle
 import os
-from pdb import set_trace
 
 dataset_path = "data/nell-995"
 input_set = "test"
@@ -26,6 +25,7 @@ limit = -1
 
 # Linux
 ray.init(address="localhost:8765")
+
 
 # MacOS
 # num_workers = 4

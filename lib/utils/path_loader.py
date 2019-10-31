@@ -1,5 +1,5 @@
 import pickle
-from typing import Dict
+from typing import Dict, Union, Tuple
 
 import numpy as np
 import torch
@@ -8,17 +8,17 @@ from torch.utils.data import DataLoader
 from lib.object import Object
 from lib.utils.dataset import Dataset
 from scripts.utils import pad_to_max_length
+from pdb import set_trace
 
 
 class PathLoader(Object, torch.utils.data.Dataset):
     def __init__(self,
                  data: np.ndarray,
                  dataset: Dataset,
-                 manifest: Dict[str, object],
+                 manifest: Union[Dict[str, object], Dict[Tuple[str, str], object]],
                  cls_token: int,
-                 entity_mapping: Dict[str, int],
-                 relation_mapping: Dict[str, int],
-                 path_max_length: int = 10):
+                 path_max_length: int = 10,
+                 test_set: bool = False):
         """
 
         Args:
@@ -40,12 +40,14 @@ class PathLoader(Object, torch.utils.data.Dataset):
         self.path_max_length = path_max_length
         # these entity/relation to ID mapping are generated when the paths were generated, therefore they may not
         # match the IDs of the current graph, and conversion is necessary
-        self.entity_mapping = entity_mapping
-        self.relation_mapping = relation_mapping
-
+        self.entity_mapping = dict((v, k) for k, v in self.manifest["entity_dict"].items())
+        self.relation_mapping = dict((v, k) for k, v in self.manifest["relation_dict"].items())
+        # these entity/relation to ID mapping are generated for each run
         self.entity_id_to_str_dict = self.dataset.entity_id_to_string_dict
         self.relation_id_to_str_dict = self.dataset.relation_id_to_string_dict
+
         self.default_tensor = torch.LongTensor([[-1] * path_max_length])
+        self.test_set = test_set
 
     def __len__(self):
         return self.data.shape[0] if self.config.data_size == -1 else self.config.data_size
@@ -54,7 +56,7 @@ class PathLoader(Object, torch.utils.data.Dataset):
         triplet = self.data[idx]
         src, rel, dst = triplet.unsqueeze(1)
 
-        src_dst_pair = (self.entity_id_to_str_dict[src.item()], self.entity_id_to_str_dict[dst.item()])
+        src_dst_pair = self.entity_id_to_str_dict[src.item()], self.entity_id_to_str_dict[dst.item()]
 
         # converting to the entity and relation IDs used when the paths were generated
         converted_src = self.entity_mapping[self.entity_id_to_str_dict[src.item()]]
@@ -67,7 +69,8 @@ class PathLoader(Object, torch.utils.data.Dataset):
 
         if src_dst_pair not in self.manifest.keys():
             self.logger.warning(f"{src_dst_pair} not found in train manifest.")
-            return self.default_tensor, self.default_tensor.bool(), triplet, rel_tensor, torch.LongTensor([num_paths])
+            return self.default_tensor, self.default_tensor.bool(), \
+                   converted_triplet, rel_tensor, torch.LongTensor([num_paths])
 
         with open(f"{self.config.dataset_path}/{self.manifest[src_dst_pair]}", "rb") as file:
             paths, masks = pickle.load(file)
@@ -82,10 +85,15 @@ class PathLoader(Object, torch.utils.data.Dataset):
 
         if len(filtered_paths) == 0:
             # self.logger.warning(f"No filtered paths found for {src_dst_pair}.")
-            return self.default_tensor, self.default_tensor.bool(), triplet, rel_tensor, torch.LongTensor([num_paths])
-        else:
-            paths = torch.stack(filtered_paths)
-            masks = torch.stack(filtered_mask)
+            return self.default_tensor, self.default_tensor.bool(), converted_triplet, \
+                   rel_tensor, torch.LongTensor([num_paths])
+
+        # paths contain ALL paths, code above should remove one path that is the target of a query to mask it
+        if not self.test_set:  # test set do not have target path, therefore we don't need to remove it
+            assert len(filtered_paths) + 1 == len(paths)
+
+        paths = torch.stack(filtered_paths)
+        masks = torch.stack(filtered_mask)
 
         num_paths = paths.shape[0]
 
@@ -126,9 +134,13 @@ class PathLoader(Object, torch.utils.data.Dataset):
             paths = paths[subset_idx, :]
             masks = masks[subset_idx, :]
 
+        # # always take the first n paths
+        # paths = paths[:self.config.max_paths, :]
+        # masks = masks[:self.config.max_paths, :]
+
         num_paths = paths.shape[0]
 
-        return paths, masks, triplet, rel_tensor, torch.LongTensor([num_paths])
+        return paths, masks, converted_triplet, rel_tensor, torch.LongTensor([num_paths])
 
     @classmethod
     def build(cls,
@@ -136,10 +148,9 @@ class PathLoader(Object, torch.utils.data.Dataset):
               dataset: Dataset,
               manifest: Dict[str, object],
               cls_token: int,
-              entity_mapping: Dict[str, int],
-              relation_mapping: Dict[str, int],
+              test_set: bool = False,
               **loader_options) -> DataLoader:
-        dataset = cls(data, dataset, manifest, cls_token, entity_mapping, relation_mapping)
+        dataset = cls(data, dataset, manifest, cls_token, test_set=test_set)
 
         default_loader_params = {
             "batch_size": 1,

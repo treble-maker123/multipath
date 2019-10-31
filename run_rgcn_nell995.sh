@@ -34,7 +34,9 @@ export cmd="python3 main.py \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
 --embedding-decay=0.01 \
---rgcn-regularizer=bdd"
+--rgcn-regularizer=bdd \
+--link-predict \
+--no-run-train-during-validate"
 
 echo ""
 echo "Executing \"$cmd\""

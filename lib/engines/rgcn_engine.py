@@ -13,7 +13,7 @@ from lib.utils.dgl_utils import generate_sampled_graph_and_labels, perturb_data
 class RGCNEngine(Engine):
     def __init__(self):
         super().__init__()
-        self.test_graph, self.adj_list, self.degrees = self.build_graph(self.graph_data)
+        self.test_graph, self.adj_list, self.degrees = self.build_graph(self.graph_without_dev)
 
     def build_model(self, *inputs, **kwargs) -> Model:
         return RGCN(num_nodes=self.num_nodes,
@@ -80,6 +80,16 @@ class RGCNEngine(Engine):
             # Validation
             # ==========================================================================================================
             if epoch % self.config.validate_interval == 0:
+                if self.config.run_train_during_validate:
+                    train_data = perturb_data(self.train_data.T).T
+                    self.logger.info("Performing validation on training set...")
+                    train_result = self.loop_through_data_for_eval(dataset=train_data,
+                                                                   model=model,
+                                                                   graph=self.test_graph,
+                                                                   batch_size=self.config.test_batch_size)
+                    self.logger.info(f"Validation on training set completed for epoch {epoch + 1}, results: ")
+                    self.pretty_print_results(train_result, "train", epoch)
+
                 self.logger.info("Performing validation on development set...")
                 valid_data = perturb_data(self.valid_data.T).T
                 valid_result = self.loop_through_data_for_eval(dataset=valid_data,
@@ -131,9 +141,13 @@ class RGCNEngine(Engine):
         for batch_idx in range(num_batches):
             start_idx, end_idx = batch_idx * batch_size, batch_idx * batch_size + batch_size
             batch = torch.from_numpy(dataset[start_idx:end_idx]).long().to(device=self.device)
-            labels = batch[:, 2]  # the objects in <subject, relation, object>
 
-            scores = model(batch, graph)
+            if self.config.link_predict:
+                labels = batch[:, 1]
+            else:
+                labels = batch[:, 2]  # the objects in <subject, relation, object>
+
+            scores = model(batch, graph, link_predict=self.config.link_predict)
             result.append(scores.cpu(), labels.cpu())
 
         return result

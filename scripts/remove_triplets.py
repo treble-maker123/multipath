@@ -3,13 +3,13 @@
 from utils import read_file_to_data, list_to_triplets
 
 if __name__ == "__main__":
-    dataset_path = "data/WN18RR"
+    dataset_path = "data/nell-995"
 
     graph_triplets = read_file_to_data(f"{dataset_path}/graph.txt")
     graph_triplet_set = set(list(map(tuple, graph_triplets)))
     print(f"There are {len(graph_triplets)} triplets in the graph set.")
 
-    input_triplets = read_file_to_data(f"{dataset_path}/train.txt")
+    input_triplets = read_file_to_data(f"{dataset_path}/dev.txt")
     input_triplet_set = set(list(map(tuple, input_triplets)))
     print(f"There are {len(input_triplets)} triplets in the triplets set.")
 

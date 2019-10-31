@@ -37,6 +37,8 @@ def add_rgcn_config(parser: ArgumentParser) -> ArgumentParser:
                         default="bbd", help="bdd (block-diagonal decomposition) or basis (basis decomposition)")
     parser.add_argument("--grad-norm", type=float,
                         default=1.0, help="norm to clip gradient to.")
+    parser.add_argument("--link-predict", dest="link_predict", action="store_true", default=False,
+                        help="Whether to calculate link predictions or node predictions")
 
     return parser
 
@@ -86,6 +88,8 @@ def add_experiment_config(parser):
                         action="store_true",
                         default=False,
                         help="Whether to use GPU for training.")
+    parser.add_argument("--num-gpus", type=int, default=1,
+                        help="Number of GPUs to use for data loader.")
     parser.add_argument("--num-workers", type=int, default=0,
                         help="Number of workers to use for data loader.")
     parser.add_argument("--engine", type=str,

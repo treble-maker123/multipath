@@ -58,22 +58,26 @@ class LinkPredict(Model):
         path_cls_embedding = path_embedding[0]  # out: batch_size * hidden_dim
 
         # calculating attention of paths conditioned on the original source and destination node representation
-        src_embedding = self.embed_path.embed_entities(src_node_id)  # out: 1 * hidden_dim
-        dst_embedding = self.embed_path.embed_entities(dst_node_id)  # out: 1 * hidden_dim
+        # src_embedding = self.embed_path.embed_entities(src_node_id)  # out: 1 * hidden_dim
+        # dst_embedding = self.embed_path.embed_entities(dst_node_id)  # out: 1 * hidden_dim
 
-        # out: batch_size
-        attention_weights = (src_embedding * path_cls_embedding * dst_embedding).sum(dim=1)
-        # out: batch_size
-        attention_scores = torch.sigmoid(attention_weights)
-        # out: path_length * batch_size * hidden_dim
-        attended_path_embedding = path_cls_embedding * attention_scores.unsqueeze(1)
+        # # out: batch_size
+        # attention_weights = (src_embedding * path_cls_embedding * dst_embedding).sum(dim=1)
+        # # out: batch_size
+        # attention_scores = torch.sigmoid(attention_weights)
+        # # out: batch_size * hidden_dim
+        # attended_path_embedding = path_cls_embedding * attention_scores.unsqueeze(1)
 
         # summarize multiple paths into one path embedding
         summarized_path_embeddings = []
         for num_path in num_paths:
-            triplet_embedding = attended_path_embedding[:num_path]
+            # triplet_embedding = attended_path_embedding[:num_path]
+
+            triplet_embedding = path_cls_embedding[:num_path]
             summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
-            attended_path_embedding = attended_path_embedding[num_path:]
+            path_cls_embedding = path_cls_embedding[num_path:]
+
+            # attended_path_embedding = attended_path_embedding[num_path:]
 
         # out: batch_size * hidden_dim
         summarized_path_embeddings = torch.stack(summarized_path_embeddings)

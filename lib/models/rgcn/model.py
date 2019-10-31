@@ -9,6 +9,7 @@ from torch import Tensor
 from lib.models import Model
 from lib.models.rgcn.embedding import RGCNEmbedding
 from lib.utils import Graph
+from pdb import set_trace
 
 
 class RGCN(Model):
@@ -39,19 +40,30 @@ class RGCN(Model):
 
     def forward(self, triplets: Tensor, graph: Graph, **kwargs) -> Tensor:
         super().forward(triplets, graph)
+        link_predict = kwargs.get("link_predict", False)
 
         # entity_emb: num_entities X hidden_dim
         # rel_emb: num_relations X hidden_dim
         node_embedding, edge_embedding = self._encode(graph)
 
-        # batch_size x hidden_dim
-        s, r = triplets[:, 0], triplets[:, 1]
+        if link_predict:
+            # batch_size x hidden_dim
+            s, d = triplets[:, 0], triplets[:, 2]
 
-        emb_ar = node_embedding[s] * edge_embedding[r]  # batch_size x hidden_dim
-        emb_ar = emb_ar.transpose(0, 1).unsqueeze(2)  # hidden_dim x batch_size x 1
-        emb_c = node_embedding.transpose(0, 1).unsqueeze(1)  # hidden_dim x 1 x num_entities
-        out_prod = torch.bmm(emb_ar, emb_c)  # hidden_dim x batch_size x num_entities
-        scores = torch.sum(out_prod, dim=0)  # batch_size x num_entities
+            emb_nodes = node_embedding[s] * node_embedding[d]  # out: batch_size x hidden_dim
+            emb_nodes = emb_nodes.transpose(0, 1).unsqueeze(2)  # out: hidden_dim x batch_size x 1
+            emb_c = edge_embedding.transpose(0, 1).unsqueeze(1)  # out hidden_dim x 1 x num_relations
+            out_prod = torch.bmm(emb_nodes, emb_c)  # out: hidden_dim x batch_size x num_entities
+            scores = torch.sum(out_prod, dim=0)  # out: batch_size x num_entities
+        else:
+            # batch_size x hidden_dim
+            s, r = triplets[:, 0], triplets[:, 1]
+
+            emb_ar = node_embedding[s] * edge_embedding[r]  # batch_size x hidden_dim
+            emb_ar = emb_ar.transpose(0, 1).unsqueeze(2)  # hidden_dim x batch_size x 1
+            emb_c = node_embedding.transpose(0, 1).unsqueeze(1)  # hidden_dim x 1 x num_entities
+            out_prod = torch.bmm(emb_ar, emb_c)  # hidden_dim x batch_size x num_entities
+            scores = torch.sum(out_prod, dim=0)  # batch_size x num_entities
 
         return torch.sigmoid(scores)
 

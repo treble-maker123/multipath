@@ -28,15 +28,55 @@ class PathTransformLinkPredictEngine(Engine):
 
         self.cls_token = self.dataset.num_entities + 1
 
-        self.entity_mapping = dict((v, k) for k, v in self.train_manifest["entity_dict"].items())
-        self.relation_mapping = dict((v, k) for k, v in self.train_manifest["relation_dict"].items())
+    @property
+    def train_loader(self):
+        return PathLoader.build(data=self.train_data,
+                                dataset=self.dataset,
+                                manifest=self.train_manifest,
+                                cls_token=self.cls_token,
+                                batch_size=self.config.train_batch_size,
+                                num_workers=self.config.num_workers,
+                                collate_fn=paths_stack_collate)
+
+    @property
+    def valid_train_loader(self):
+        return PathLoader.build(data=self.train_data,
+                                dataset=self.dataset,
+                                manifest=self.train_manifest,
+                                cls_token=self.cls_token,
+                                batch_size=self.config.test_batch_size,
+                                num_workers=self.config.num_workers,
+                                collate_fn=paths_stack_collate)
+
+    @property
+    def valid_loader(self):
+        return PathLoader.build(data=self.valid_data,
+                                dataset=self.dataset,
+                                manifest=self.valid_manifest,
+                                cls_token=self.cls_token,
+                                batch_size=self.config.test_batch_size,
+                                num_workers=self.config.num_workers,
+                                collate_fn=paths_stack_collate)
+
+    @property
+    def test_loader(self):
+        return PathLoader.build(data=self.test_data,
+                                dataset=self.dataset,
+                                manifest=self.test_manifest,
+                                cls_token=self.cls_token,
+                                test_set=True,
+                                batch_size=self.config.test_batch_size,
+                                num_workers=self.config.num_workers,
+                                collate_fn=paths_stack_collate)
 
     def build_model(self, *inputs, **kwargs) -> Model:
-        return PathTransformLinkPredict(num_entities=self.num_nodes,
-                                        num_relations=self.num_relations,
-                                        hidden_dim=self.config.hidden_dim,
-                                        num_att_heads=self.config.num_attention_heads,
-                                        num_transformer_layers=self.config.num_transformer_layers)
+        model = PathTransformLinkPredict(num_entities=self.num_nodes,
+                                         num_relations=self.num_relations,
+                                         hidden_dim=self.config.hidden_dim,
+                                         num_att_heads=self.config.num_attention_heads,
+                                         num_transformer_layers=self.config.num_transformer_layers)
+
+        return model
 
     def run(self) -> None:
         self.train(self.config.num_epochs)
@@ -44,33 +84,9 @@ class PathTransformLinkPredictEngine(Engine):
 
     def train(self, num_epochs: int) -> None:
         best_mrr = float("-inf")
-        train_loader = PathLoader.build(data=self.train_data,
-                                        dataset=self.dataset,
-                                        manifest=self.train_manifest,
-                                        cls_token=self.cls_token,
-                                        entity_mapping=self.entity_mapping,
-                                        relation_mapping=self.relation_mapping,
-                                        batch_size=self.config.train_batch_size,
-                                        num_workers=self.config.num_workers,
-                                        collate_fn=paths_stack_collate)
-        valid_train_loader = PathLoader.build(data=self.train_data,
-                                              dataset=self.dataset,
-                                              manifest=self.train_manifest,
-                                              cls_token=self.cls_token,
-                                              entity_mapping=self.entity_mapping,
-                                              relation_mapping=self.relation_mapping,
-                                              batch_size=self.config.test_batch_size,
-                                              num_workers=self.config.num_workers,
-                                              collate_fn=paths_stack_collate)
-        valid_loader = PathLoader.build(data=self.valid_data,
-                                        dataset=self.dataset,
-                                        manifest=self.valid_manifest,
-                                        cls_token=self.cls_token,
-                                        entity_mapping=self.entity_mapping,
-                                        relation_mapping=self.relation_mapping,
-                                        batch_size=self.config.test_batch_size,
-                                        num_workers=self.config.num_workers,
-                                        collate_fn=paths_stack_collate)
+        train_loader = self.train_loader
+        valid_train_loader = self.valid_train_loader
+        valid_loader = self.valid_loader
 
         for epoch in range(num_epochs):
             self.logger.info(f"Starting epoch {epoch + 1}...")
@@ -103,6 +119,7 @@ class PathTransformLinkPredictEngine(Engine):
                     n = n.to(device=self.device)
 
                     loss = model.loss(t, r, self.train_graph, paths=p, masks=m, num_paths=n)
+
                     loss.backward()
                     batch_loss += loss.detach().cpu()
                     path_counter += len(n)
@@ -124,6 +141,7 @@ class PathTransformLinkPredictEngine(Engine):
                     train_result = self.loop_through_data_for_eval(dataset=valid_train_loader,
                                                                    model=self.model,
                                                                    graph=self.test_graph)
+
                     self.logger.info(f"Validation on training set completed for epoch {epoch + 1}, results: ")
                     self.pretty_print_results(train_result, "train", epoch)
 
@@ -145,15 +163,7 @@ class PathTransformLinkPredictEngine(Engine):
     def test(self) -> Result:
         self.logger.info(f"Loading model with best MRR...")
         self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
-        test_loader = PathLoader.build(data=self.test_data,
-                                       dataset=self.dataset,
-                                       manifest=self.test_manifest,
-                                       cls_token=self.cls_token,
-                                       entity_mapping=self.entity_mapping,
-                                       relation_mapping=self.relation_mapping,
-                                       batch_size=self.config.test_batch_size,
-                                       num_workers=self.config.num_workers,
-                                       collate_fn=paths_stack_collate)
+        test_loader = self.test_loader
 
         self.logger.info("Starting testing...")
         test_result = self.loop_through_data_for_eval(dataset=test_loader,

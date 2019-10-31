@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Iterable, Dict, Tuple, List
+from typing import Optional, Iterable, Dict, Tuple, List, Union
 
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.nn import DataParallel
 
 from config import configured_device
 from lib import Object
@@ -20,7 +21,7 @@ class Engine(Object, ABC):
         ABC.__init__(self)
 
         self.dataset: Optional[Dataset] = Dataset(self.config.dataset_path)
-        self.model: Optional[Model] = self.build_model()
+        self.model: Optional[Union[Model, DataParallel]] = self.build_model()
         self.optimizer: Optional[Optimizer] = Engine.build_optimizer(**self.build_optimizer_params())
 
     # ==================================================================================================================
@@ -65,6 +66,18 @@ class Engine(Object, ABC):
         return self.dataset.get("graph").T
 
     @property
+    def graph_without_dev(self) -> Optional[np.ndarray]:
+        """For NELL-995, the returned graph triplets have dev set removed for RGCN training.
+        """
+        dataset_path = self.config.dataset_path
+
+        if "nell-995" in dataset_path:
+            triplets = Dataset.load_triplets_from_file(f"{dataset_path}/graph_without_dev.txt")
+            return self.dataset.triplets_to_idx(triplets).T
+        else:
+            return None
+
+    @property
     def num_nodes(self) -> int:
         return self.dataset.num_entities
 
@@ -88,7 +101,12 @@ class Engine(Object, ABC):
         if not self.config.save_model:
             self.logger.info("Configuration save-model set to false, skipping checkpoint.")
             return
-        self.model.save_weights_to_file(self.model_file_path)
+
+        if type(self.model) == DataParallel:
+            model: Model = self.model.module
+            model.save_weights_to_file(self.model_file_path)
+        else:
+            self.model.save_weights_to_file(self.model_file_path)
 
     def pretty_print_results(self, result: Result, split: str, epoch: int = 0) -> None:
         mrr = result.calculate_mrr().item()

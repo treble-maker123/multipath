@@ -13,28 +13,31 @@
  export CUDA_LAUNCH_BLOCKING=1
 
 # To make a boolean option False, simply prefix with "no-"
-export cmd="python3 main.py \
+export cmd="python -i main.py \
 --run-id=$SLURM_JOB_ID \
+--interactive \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---write-tensorboard \
---save-model \
---save-result \
+--no-write-tensorboard \
+--no-save-model \
+--no-save-result \
 --use-gpu \
 --engine=path-transform-link-predict \
 --dataset-path=data/nell-995 \
 --data-size=-1 \
---num-epochs=200 \
+--num-epochs=100 \
 --num-workers=12 \
 --train-batch-size=256 \
 --test-batch-size=1 \
---hidden-dim=180 \
---num-transformer-layers=2 \
---num-attention-heads=6 \
---validate-interval=20 \
---max-paths=1000 \
---bucket-size=28000 "
+--hidden-dim=500 \
+--learn-rate=0.0001 \
+--num-transformer-layers=3 \
+--num-attention-heads=1 \
+--validate-interval=2 \
+--max-paths=50 \
+--bucket-size=32000 \
+--run-train-during-validate"
 
 echo ""
 echo "Executing \"$cmd\""

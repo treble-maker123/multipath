@@ -1,4 +1,5 @@
 from typing import Dict
+from typing import List
 
 import numpy as np
 
@@ -64,6 +65,15 @@ class Dataset(Object):
     def relation_id_to_string_dict(self) -> Dict[int, str]:
         return dict((v, k) for k, v in self.relation_vocab.items())
 
+    @property
+    def all_triplets(self) -> np.ndarray:
+        return np.concatenate([
+            self.get("train").T,
+            self.get("valid").T,
+            self.get("test").T,
+            self.get("graph").T
+        ])
+
     def get(self, split: str) -> np.ndarray:
         return self.data[split]
 
@@ -76,6 +86,17 @@ class Dataset(Object):
         dst_idx = np.array([self.entity_vocab[key] for key in dst])
 
         return np.vstack([src_idx, rel_idx, dst_idx])
+
+    def path_to_idx(self, path: List[str]) -> List[int]:
+        int_paths = []
+
+        for idx, element in enumerate(path):
+            if idx % 2 == 0:  # entity
+                int_paths.append(self.entity_vocab[element])
+            else:  # relation
+                int_paths.append(self.relation_vocab[element])
+
+        return int_paths
 
     @classmethod
     def load_triplets_from_file(cls, path: str) -> Triplets:

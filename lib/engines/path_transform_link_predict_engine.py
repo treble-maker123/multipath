@@ -1,4 +1,4 @@
-import pickle
+import json
 
 import torch
 from torch.utils.data import DataLoader
@@ -19,52 +19,59 @@ class PathTransformLinkPredictEngine(Engine):
         self.entity_id_to_str_dict = self.dataset.entity_id_to_string_dict
         self.relation_id_to_str_dict = self.dataset.relation_id_to_string_dict
 
-        with open(f"{self.config.dataset_path}/train_paths/000manifest.pickle", "rb") as file:
-            self.train_manifest = pickle.load(file)
-        with open(f"{self.config.dataset_path}/valid_paths/000manifest.pickle", "rb") as file:
-            self.valid_manifest = pickle.load(file)
-        with open(f"{self.config.dataset_path}/test_paths/000manifest.pickle", "rb") as file:
-            self.test_manifest = pickle.load(file)
+        with open(f"{self.config.dataset_path}/train_paths/000manifest.json", "r") as file:
+            self.train_manifest = json.load(file)
+        with open(f"{self.config.dataset_path}/valid_paths/000manifest.json", "r") as file:
+            self.valid_manifest = json.load(file)
+        with open(f"{self.config.dataset_path}/test_paths/000manifest.json", "r") as file:
+            self.test_manifest = json.load(file)
 
         self.cls_token = self.dataset.num_entities + 1
 
     @property
     def train_loader(self):
+        self.logger.info("Building training dataset.")
         return PathLoader.build(data=self.train_data,
                                 dataset=self.dataset,
                                 manifest=self.train_manifest,
                                 cls_token=self.cls_token,
+                                data_split="train",
                                 batch_size=self.config.train_batch_size,
                                 num_workers=self.config.num_workers,
                                 collate_fn=paths_stack_collate)
 
     @property
     def valid_train_loader(self):
+        self.logger.info("Building training dataset for validation.")
         return PathLoader.build(data=self.train_data,
                                 dataset=self.dataset,
                                 manifest=self.train_manifest,
                                 cls_token=self.cls_token,
+                                data_split="valid",
                                 batch_size=self.config.test_batch_size,
                                 num_workers=self.config.num_workers,
                                 collate_fn=paths_stack_collate)
 
     @property
     def valid_loader(self):
+        self.logger.info("Building validation dataset.")
         return PathLoader.build(data=self.valid_data,
                                 dataset=self.dataset,
                                 manifest=self.valid_manifest,
                                 cls_token=self.cls_token,
+                                data_split="valid",
                                 batch_size=self.config.test_batch_size,
                                 num_workers=self.config.num_workers,
                                 collate_fn=paths_stack_collate)
 
     @property
     def test_loader(self):
+        self.logger.info("Building test dataset.")
         return PathLoader.build(data=self.test_data,
                                 dataset=self.dataset,
                                 manifest=self.test_manifest,
                                 cls_token=self.cls_token,
-                                test_set=True,
+                                data_split="test",
                                 batch_size=self.config.test_batch_size,
                                 num_workers=self.config.num_workers,
                                 collate_fn=paths_stack_collate)
@@ -103,11 +110,13 @@ class PathTransformLinkPredictEngine(Engine):
             batch_loss = 0.0
             path_counter = 0
 
-            for idx, (paths, masks, triplets, relations, num_paths) in enumerate(tqdm(train_loader)):
+            for idx, (paths, masks, labels, triplets, num_paths) in enumerate(tqdm(train_loader)):
                 bucket_size = self.config.bucket_size
-                bucket_generator = self.train_bucket_generator(paths, masks, triplets, relations, num_paths,
+                bucket_generator = self.train_bucket_generator(paths, masks, triplets, labels,
+                                                               num_paths=num_paths,
                                                                max_paths_per_bucket=bucket_size)
-                for p, m, t, r, n in bucket_generator:
+
+                for p, m, t, l, n in bucket_generator:
                     assert (p == -1).sum() == 0  # no elements with -1
                     assert p.shape[0] == n.sum().item()  # correct number of paths
                     assert m.shape[0] == n.sum().item()  # correct number of masks
@@ -115,10 +124,10 @@ class PathTransformLinkPredictEngine(Engine):
                     p = p.to(device=self.device)
                     m = m.to(device=self.device)
                     t = t.to(device=self.device)
-                    r = r.to(device=self.device)
+                    l = l.to(device=self.device)
                     n = n.to(device=self.device)
 
-                    loss = model.loss(t, r, self.train_graph, paths=p, masks=m, num_paths=n)
+                    loss = model.loss(t, l, self.train_graph, paths=p, masks=m, num_paths=n)
 
                     loss.backward()
                     batch_loss += loss.detach().cpu()
@@ -189,8 +198,9 @@ class PathTransformLinkPredictEngine(Engine):
 
         result = Result()
 
-        for idx, (paths, mask, triplet, relations, num_paths) in enumerate(tqdm(dataset)):
-            label = relations.to(device=self.device)
+        for idx, (paths, mask, _, triplet, num_paths) in enumerate(tqdm(dataset)):
+            labels = triplet[:, 1]
+            assert len(triplet) == len(labels)
 
             if num_paths.size() == torch.Size([1, 1]) and num_paths.item() == 0:
                 score = torch.randn(1, self.num_relations)
@@ -201,7 +211,7 @@ class PathTransformLinkPredictEngine(Engine):
 
                 score = model(triplet, graph, paths=paths, masks=mask, num_paths=num_paths)
 
-            result.append(score.cpu(), label.cpu())
+            result.append(score.cpu(), labels.cpu())
 
         return result
 
@@ -209,11 +219,18 @@ class PathTransformLinkPredictEngine(Engine):
                                paths: torch.Tensor,
                                masks: torch.Tensor,
                                triplet: torch.Tensor,
-                               relations: torch.Tensor,
+                               labels: torch.Tensor,
                                num_paths: torch.Tensor,
                                max_paths_per_bucket: int = 16000):
         """Divides the input data into buckets with maximum size of max_paths_per_bucket.
         """
+        assert len(paths) == len(masks)
+        assert len(triplet) == len(labels)
+
+        # paths contain [-1, -1 ...] vector in place of empty paths
+        num_empty_paths = (num_paths == 0).nonzero().shape[0]
+        assert num_paths.sum().item() == (paths.shape[0] - num_empty_paths)
+
         bucket = self._create_new_bucket()
 
         for num_path_tensor in num_paths:
@@ -225,7 +242,7 @@ class PathTransformLinkPredictEngine(Engine):
                 paths = paths[1:]
                 masks = masks[1:]
                 triplet = triplet[1:]
-                relations = relations[1:]
+                labels = labels[1:]
                 continue
 
             # if adding this triplet will overflow, yield what we have so far
@@ -233,7 +250,7 @@ class PathTransformLinkPredictEngine(Engine):
                 yield torch.cat(bucket["paths"]), \
                       torch.cat(bucket["masks"]), \
                       torch.stack(bucket["triplet"]), \
-                      torch.stack(bucket["relations"]), \
+                      torch.stack(bucket["labels"]), \
                       torch.stack(bucket["num_paths"])
                 bucket = self._create_new_bucket()
 
@@ -243,26 +260,33 @@ class PathTransformLinkPredictEngine(Engine):
             bucket["count"] += num_path
             bucket["paths"].append(paths[:num_path])
             bucket["masks"].append(masks[:num_path])
-            bucket["triplet"] += [triplet[0]] * num_path
-            bucket["relations"].append(relations[0])
+            bucket["triplet"].append(triplet[0])
+            bucket["labels"].append(labels[0])
             bucket["num_paths"].append(num_path_tensor)
 
             # remove those values from the original tensor
             paths = paths[num_path:]
             masks = masks[num_path:]
             triplet = triplet[1:]
-            relations = relations[1:]
+            labels = labels[1:]
 
             num_paths_after = paths.shape[0]
 
-            assert num_paths_after + num_path == num_paths_before  # correct number of paths removed
+            assert num_paths_after + num_path == num_paths_before, f"Expecting bucket to remove {num_path}, started" \
+                                                                   f"with {num_paths_before}, and ended with " \
+                                                                   f"{num_paths_after}"
+
+        assert len(paths) == 0
+        assert len(masks) == 0
+        assert len(triplet) == 0
+        assert len(labels) == 0
 
         # if there's left over, yield one last time
         if bucket["count"] > 0:
             yield torch.cat(bucket["paths"]), \
                   torch.cat(bucket["masks"]), \
                   torch.stack(bucket["triplet"]), \
-                  torch.stack(bucket["relations"]), \
+                  torch.stack(bucket["labels"]), \
                   torch.stack(bucket["num_paths"])
 
     @classmethod
@@ -272,6 +296,6 @@ class PathTransformLinkPredictEngine(Engine):
             "paths": [],
             "masks": [],
             "triplet": [],
-            "relations": [],
+            "labels": [],
             "num_paths": []
         }

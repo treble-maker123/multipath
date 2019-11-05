@@ -1,5 +1,5 @@
-import pickle
-from typing import Dict, Union, Tuple
+import json
+from typing import Dict, Union, Tuple, List
 
 import numpy as np
 import torch
@@ -7,8 +7,6 @@ from torch.utils.data import DataLoader
 
 from lib.object import Object
 from lib.utils.dataset import Dataset
-from scripts.utils import pad_to_max_length
-from pdb import set_trace
 
 
 class PathLoader(Object, torch.utils.data.Dataset):
@@ -18,7 +16,7 @@ class PathLoader(Object, torch.utils.data.Dataset):
                  manifest: Union[Dict[str, object], Dict[Tuple[str, str], object]],
                  cls_token: int,
                  path_max_length: int = 10,
-                 test_set: bool = False):
+                 data_split: str = "train"):
         """
 
         Args:
@@ -26,121 +24,139 @@ class PathLoader(Object, torch.utils.data.Dataset):
             dataset: dataset object constructed by the Engine class
             manifest: a dictionary containing where the path files are
             cls_token: index for the CLS token
-            entity_mapping:
-            relation_mapping:
-            path_max_length: max length of the paths, including the starting CLS token. Default to 10 for 4-hop paths.
+            path_max_length: max length of the paths, including the starting CLS token. Default to 10 for 4-hop paths
+            data_split: which split of data this path loader is loading, "train", "valid", or "test"
         """
         Object.__init__(self)
         torch.utils.data.Dataset.__init__(self)
 
-        self.data = torch.from_numpy(data)
         self.dataset = dataset
+
+        if data_split == "train":
+            self.data, self.labels = self._negative_sample(data, sample_rate=self.config.negative_sample_factor)
+            self.data, self.labels = torch.from_numpy(self.data).long(), torch.from_numpy(self.labels).long()
+        else:
+            self.data = torch.from_numpy(data).long()
+            self.labels = torch.ones(len(data)).long()
+
         self.manifest = manifest
         self.cls_token = cls_token
         self.path_max_length = path_max_length
-        # these entity/relation to ID mapping are generated when the paths were generated, therefore they may not
-        # match the IDs of the current graph, and conversion is necessary
-        self.entity_mapping = dict((v, k) for k, v in self.manifest["entity_dict"].items())
-        self.relation_mapping = dict((v, k) for k, v in self.manifest["relation_dict"].items())
-        # these entity/relation to ID mapping are generated for each run
-        self.entity_id_to_str_dict = self.dataset.entity_id_to_string_dict
-        self.relation_id_to_str_dict = self.dataset.relation_id_to_string_dict
+
+        self.entity_id_to_str = self.dataset.entity_id_to_string_dict
+        self.relation_id_to_str = self.dataset.relation_id_to_string_dict
 
         self.default_tensor = torch.LongTensor([[-1] * path_max_length])
-        self.test_set = test_set
+        self.data_split = data_split
 
     def __len__(self):
         return self.data.shape[0] if self.config.data_size == -1 else self.config.data_size
 
     def __getitem__(self, idx: int):
         triplet = self.data[idx]
+        label = self.labels[idx]
         src, rel, dst = triplet.unsqueeze(1)
 
-        src_dst_pair = self.entity_id_to_str_dict[src.item()], self.entity_id_to_str_dict[dst.item()]
+        src_dst_tuple = self.entity_id_to_str[src.item()], self.entity_id_to_str[dst.item()]
+        src_dst_str = ", ".join(src_dst_tuple)
 
-        # converting to the entity and relation IDs used when the paths were generated
-        converted_src = self.entity_mapping[self.entity_id_to_str_dict[src.item()]]
-        converted_rel = self.relation_mapping[self.relation_id_to_str_dict[rel.item()]]
-        converted_dst = self.entity_mapping[self.entity_id_to_str_dict[dst.item()]]
-        converted_triplet = torch.LongTensor([converted_src, converted_rel, converted_dst])
+        if src_dst_str not in self.manifest.keys():
+            self.logger.warning(f"<{src_dst_str}> not found in train manifest.")
+            return self.default_tensor, self.default_tensor.bool(), triplet, label, torch.LongTensor([0])
 
-        num_paths = 0
-        rel_tensor = torch.LongTensor([converted_rel])
+        with open(f"{self.config.dataset_path}/{self.manifest[src_dst_str]}", "rb") as file:
+            str_paths = json.load(file)
 
-        if src_dst_pair not in self.manifest.keys():
-            self.logger.warning(f"{src_dst_pair} not found in train manifest.")
-            return self.default_tensor, self.default_tensor.bool(), \
-                   converted_triplet, rel_tensor, torch.LongTensor([num_paths])
+        # convert the string paths to int paths
+        int_paths = list(map(lambda p: self.dataset.path_to_idx(p), str_paths))
 
-        with open(f"{self.config.dataset_path}/{self.manifest[src_dst_pair]}", "rb") as file:
-            paths, masks = pickle.load(file)
+        # remove the target path from the paths
+        int_triplet = list(map(lambda x: x.item(), triplet))
+        try:
+            int_paths.remove(int_triplet)
+        except ValueError:
+            if self.data_split == "valid" or (self.data_split == "train" and label.item() == 1):
+                raise AssertionError(f"Failed to remove path for {self.data_split} set with query <{src_dst_str}> with"
+                                     f" label {label}")
 
-        # remove the current path from the paths
-        filtered_paths, filtered_mask = [], []
-        for idx, path in enumerate(paths):
-            match = (path[:3] == converted_triplet).sum().item() == 3
-            if not match:
-                filtered_paths.append(path)
-                filtered_mask.append(masks[idx])
+        # return with random values if no paths left
+        if len(int_paths) == 0:
+            return self.default_tensor, self.default_tensor.bool(), label, triplet, torch.LongTensor([0])
 
-        if len(filtered_paths) == 0:
-            # self.logger.warning(f"No filtered paths found for {src_dst_pair}.")
-            return self.default_tensor, self.default_tensor.bool(), converted_triplet, \
-                   rel_tensor, torch.LongTensor([num_paths])
+        # add CLS token to the beginning of each path
+        int_paths = list(map(lambda x: [self.cls_token] + x, int_paths))
 
-        # paths contain ALL paths, code above should remove one path that is the target of a query to mask it
-        if not self.test_set:  # test set do not have target path, therefore we don't need to remove it
-            assert len(filtered_paths) + 1 == len(paths)
+        # pad the paths to max length
+        padded_int_paths = list(map(self._pad_to_max_length, int_paths))
 
-        paths = torch.stack(filtered_paths)
-        masks = torch.stack(filtered_mask)
+        # Turn them into path and mask tensors
+        tensor_conversion = map(lambda x: (torch.LongTensor(x[0]), torch.BoolTensor(x[1])), padded_int_paths)
+        paths, masks = list(zip(*tensor_conversion))
+        paths, masks = torch.stack(paths), torch.stack(masks)
 
+        if len(paths) > self.config.max_paths:
+            paths, masks = self._sample_subset(paths, masks)
+
+        return paths, masks, label, triplet, torch.LongTensor([len(paths)])
+
+    def _pad_to_max_length(self, path: List[int]) -> Tuple[List[int], List[int]]:
+        assert len(path) <= self.path_max_length, f"Expecting length of path ({len(path)}) to be smaller than " \
+                                                  f"{self.path_max_length}."
+
+        rel_pad, ent_pad = self.dataset.num_relations, self.dataset.num_entities
+        max_length = self.path_max_length
+        mask = [0] * len(path) + [1] * (self.path_max_length - len(path))
+
+        for i in range(max_length):
+            if len(path) >= self.path_max_length:
+                break
+
+            if i % 2 == 0:  # relation
+                path.append(rel_pad)
+            else:  # entity
+                path.append(ent_pad)
+
+        assert path[-1] == ent_pad or path[-1] == path[-1], f"Expecting last element of path to be the padding " \
+                                                            f"token {ent_pad} or the past element {path[-1]} but " \
+                                                            f"instead got {path[-1]}."
+        assert len(path) <= self.path_max_length
+        assert len(mask) <= self.path_max_length
+        assert len(path) == len(mask)
+
+        return path, mask
+
+    def _sample_subset(self,
+                       paths: torch.Tensor,
+                       masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         num_paths = paths.shape[0]
+        subset_idx = torch.randperm(num_paths)[:self.config.max_paths]
 
-        # add a CLS token
-        cls_tokens, mask_tokens = [self.cls_token] * num_paths, [False] * num_paths
-        cls_tokens = torch.LongTensor(cls_tokens).unsqueeze(1)
-        mask_tokens = torch.BoolTensor(mask_tokens).unsqueeze(1)
+        return paths[subset_idx, :], masks[subset_idx, :]
 
-        paths = torch.cat((cls_tokens, paths), dim=1)
-        masks = torch.cat((mask_tokens, masks), dim=1)
+    def _negative_sample(self, data: np.ndarray, sample_rate: int) -> Tuple[np.ndarray, np.ndarray]:
+        self.logger.info("Sampling negative examples...")
 
-        path_length = paths.shape[1]
+        if sample_rate == 0:
+            return data, np.ones(len(data))
 
-        # if the path length is less than max, pad the paths to max length
-        if path_length < self.path_max_length:
-            rel_pad, ent_pad = self.dataset.num_relations, self.dataset.num_entities
-            padded_paths = []
-            padded_masks = []
+        pos_samples = self.dataset.all_triplets
+        neg_samples = np.concatenate([np.copy(data) for _ in range(sample_rate)])
+        np.random.shuffle(neg_samples[:, 1])
 
-            for path in paths:
-                # convert tensor to tuple of ints
-                path = tuple(map(lambda x: x.item(), list(path.squeeze())))
+        valid_neg_samples = list(filter(lambda x: not self._is_member(x, pos_samples), neg_samples))
+        valid_neg_samples = np.stack(valid_neg_samples)
 
-                padded_path, padded_mask = pad_to_max_length(path,
-                                                             max_length=self.path_max_length,
-                                                             padding=(rel_pad, ent_pad))
+        pos_labels = np.ones(data.shape[0])
+        neg_labels = np.zeros(valid_neg_samples.shape[0])
 
-                padded_paths.append(torch.LongTensor(padded_path))
-                padded_masks.append(padded_mask)
+        self.logger.info(f"Sampled {len(neg_labels)} negative examples.")
 
-            paths = torch.stack(padded_paths)
-            masks = torch.stack(padded_masks)
+        complete_data = np.concatenate([data, valid_neg_samples])
+        complete_labels = np.concatenate([pos_labels, neg_labels])
 
-        # if paths are greater than max, sample a subset
-        if num_paths > self.config.max_paths:
-            # self.logger.info(f"{num_paths} paths, sampling subset of {self.config.max_paths} paths...")
-            subset_idx = torch.randperm(num_paths)[:self.config.max_paths]
-            paths = paths[subset_idx, :]
-            masks = masks[subset_idx, :]
+        assert len(complete_data) == len(complete_labels)
 
-        # # always take the first n paths
-        # paths = paths[:self.config.max_paths, :]
-        # masks = masks[:self.config.max_paths, :]
-
-        num_paths = paths.shape[0]
-
-        return paths, masks, converted_triplet, rel_tensor, torch.LongTensor([num_paths])
+        return complete_data, complete_labels
 
     @classmethod
     def build(cls,
@@ -148,9 +164,9 @@ class PathLoader(Object, torch.utils.data.Dataset):
               dataset: Dataset,
               manifest: Dict[str, object],
               cls_token: int,
-              test_set: bool = False,
+              data_split: str = "train",
               **loader_options) -> DataLoader:
-        dataset = cls(data, dataset, manifest, cls_token, test_set=test_set)
+        dataset = cls(data, dataset, manifest, cls_token, data_split=data_split)
 
         default_loader_params = {
             "batch_size": 1,
@@ -162,3 +178,9 @@ class PathLoader(Object, torch.utils.data.Dataset):
         default_loader_params.update(loader_options)
 
         return DataLoader(dataset, **default_loader_params)
+
+    @staticmethod
+    def _is_member(subarray: np.ndarray, array: np.ndarray) -> bool:
+        """Test whether a triplet is a subarray of array.
+        """
+        return ((subarray == array).sum(axis=1) == 3).sum() > 0

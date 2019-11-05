@@ -1,7 +1,7 @@
 import pickle
 from itertools import chain
 from typing import List, Iterable
-from typing import Union, Tuple
+from typing import Tuple, Dict
 
 import torch
 
@@ -26,10 +26,9 @@ def list_to_triplets(triplets: List[Iterable[str]]) -> List[str]:
     return list(map(lambda x: "\t".join(x) + "\n", triplets))
 
 
-def enumerate_paths(src_dst_pair: torch.Tensor,
-                    max_hops: int,
-                    graph,
-                    padding: Union[Tuple[int, int], List[int]]) -> List[torch.Tensor]:
+def enumerate_paths(src_dst_pair: torch.Tensor, max_hops: int, graph,
+                    entity_id_to_string_dict: Dict[int, str],
+                    relation_id_to_string_dict: Dict[int, str]) -> List[List[str]]:
     """Enumerates all paths composed of edges start on src_node_id, and expanding breadth-first toward dst_node_id,
     with a maximum of max_hops.
 
@@ -37,8 +36,7 @@ def enumerate_paths(src_dst_pair: torch.Tensor,
         src_dst_pair: A 2x1 torch tensor where the first element contains the source node ID and the second element
             contains the destination node ID
         max_hops: The most number of hops to make to identify paths
-        graph: The graph on which to traverse
-        padding: A tuple of indices representing the padding token for entity and relation
+        graph: The graph on which to traverses
     """
     assert src_dst_pair.size() == enumerate_path_correct_size
 
@@ -110,22 +108,20 @@ def enumerate_paths(src_dst_pair: torch.Tensor,
     # include the paths that are less than max hops away
     shorter_paths = list(filter(lambda path: path[-1] == dst_node_id, list(chain(*forward_hops[1:]))))
     candidate_paths += shorter_paths
+    final_paths = []
 
-    if len(candidate_paths) > 0:
-        num_paths = len(candidate_paths)
-        max_length = max(map(len, candidate_paths))
-        arguments = [candidate_paths, [max_length] * num_paths, [padding] * num_paths]
-        candidate_paths, masks = list(zip(*map(pad_to_max_length, *arguments)))
-        mask_tensor = torch.stack(masks)
-    else:
-        mask_tensor = None
+    for int_path in candidate_paths:
+        str_path = []
+        for idx, element in enumerate(int_path):
+            if idx % 2 == 0:  # entity
+                str_path.append(entity_id_to_string_dict[int_path[idx]])
+            else:  # relation
+                str_path.append(relation_id_to_string_dict[int_path[idx]])
+        final_paths.append(str_path)
 
-    path_tensors = list(map(torch.LongTensor, candidate_paths))
-    path_tensor = torch.stack(path_tensors) if len(path_tensors) > 0 else torch.Tensor()
+    print(f"found {len(candidate_paths)} paths.")
 
-    print(f"found {path_tensor.shape[0]} paths.")
-
-    return [src_dst_pair, path_tensor, mask_tensor]
+    return final_paths
 
 
 def create_hop_paths(hop_src_id: torch.Tensor,

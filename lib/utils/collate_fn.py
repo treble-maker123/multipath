@@ -7,8 +7,8 @@ def paths_stack_collate(batch):
     """
     paths = torch.cat(list(map(lambda x: x[0], batch)))
     masks = torch.cat(list(map(lambda x: x[1], batch)))
-    triplets = torch.stack(list(map(lambda x: x[2], batch)))
-    relations = torch.stack(list(map(lambda x: x[3], batch)))
+    labels = torch.stack(list(map(lambda x: x[2], batch)))
+    triplet = torch.stack(list(map(lambda x: x[3], batch)))
     num_paths = torch.stack(list(map(lambda x: x[4], batch)))
 
-    return paths, masks, triplets, relations, num_paths
+    return paths, masks, labels, triplet, num_paths

@@ -3,6 +3,8 @@
 # Command to start everything:
 # CUDA_VISIBLE_DEVICES="" bash scripts/start_ray.sh && python scripts/generate_paths.py && ray stop && exit
 
+export CUDA_VISIBLE_DEVICES=""
+
 ray start --head \
   --node-ip-address=127.0.0.1 \
   --redis-port=8765 \

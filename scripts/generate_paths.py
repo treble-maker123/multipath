@@ -15,6 +15,7 @@ from time import time
 import ray
 import pickle
 import os
+import json
 
 dataset_path = "data/nell-995"
 input_set = "test"
@@ -35,17 +36,17 @@ ray.init(address="localhost:8765")
 
 
 @ray.remote
-def enumerate_path_wrapper(src_dst_pair, output_file_name, num_hops, pickled_graph, padding_tokens):
-    _, path_tensor, mask_tensor = enumerate_paths(src_dst_pair, num_hops, pickled_graph, padding_tokens)
+def enumerate_path_wrapper(src_dst_pair, output_file_name, num_hops, pickled_graph, entity_dict,
+                           relation_dict):
+    candidate_paths = enumerate_paths(src_dst_pair, num_hops, pickled_graph, entity_dict, relation_dict)
 
-    with open(f"{dataset_path}/{output_file_name}", "wb") as file:
-        pickle.dump([path_tensor, mask_tensor], file)
+    with open(f"{dataset_path}/{output_file_name}", "w") as file:
+        json.dump(candidate_paths, file)
 
 
 if __name__ == "__main__":
     print(f"Started generating paths with input: {input_set}, graph: {graph_set}, and output: {output_path}.")
     start_time = time()
-    max_hops = ray.put(max_hops)
     mapping = Dataset(dataset_path=dataset_path)
 
     input_triplets = torch.from_numpy(mapping.get(input_set).T)
@@ -55,7 +56,6 @@ if __name__ == "__main__":
         build_test_graph(mapping.num_entities, mapping.num_relations, graph_triplets, inverse=False)
     graph.ndata.update({"id": torch.arange(0, mapping.num_entities, dtype=torch.long).view(-1, 1)})
     graph.edata.update({"type": torch.from_numpy(relations)})
-    pickled_graph = ray.put(pickle.dumps(graph))
 
     padding = ray.put([mapping.num_relations, mapping.num_entities])
     src_dst_pairs = list(set(map(lambda x: (x[0].item(), x[2].item()), input_triplets)))
@@ -69,36 +69,41 @@ if __name__ == "__main__":
         print(f"Creating output directory at {dataset_path}/{output_path}")
         os.mkdir(f"{dataset_path}/{output_path}")
 
-    # because the entity ID changes from run to run, and the entity names are not good as file names, storing a manifest
-    # that maps the entity names to the file names
-    entity_to_string = mapping.entity_id_to_string_dict
-    relation_to_string = mapping.relation_id_to_string_dict
-    manifest = {
-        "entity_dict": entity_to_string,
-        "relation_dict": relation_to_string
-    }
+    entity_id_to_string_dict = ray.put(mapping.entity_id_to_string_dict)
+    relation_id_to_string_dict = ray.put(mapping.relation_id_to_string_dict)
+
+    manifest = {}
+    entity_dict = mapping.entity_id_to_string_dict
 
     object_ids = []
     print("Initializing object IDs")
 
+    max_hops = ray.put(max_hops)
+    pickled_graph = ray.put(pickle.dumps(graph))
+    entity_to_string = ray.put(mapping.entity_id_to_string_dict)
+    relation_to_string = ray.put(mapping.relation_id_to_string_dict)
+
     for src_dst_pair in src_dst_tensors:
         ints = (src_dst_pair[0].item(), src_dst_pair[1].item())
-        strs = (entity_to_string[ints[0]], entity_to_string[ints[1]])
-        file_name = f"{'_'.join(list(map(str, ints)))}.pickle"
+        strs = f"{entity_dict[ints[0]]}, {entity_dict[ints[1]]}"
+        file_name = f"{'_'.join(list(map(str, ints)))}.json"
         pair_output_path = f"{output_path}/{file_name}"
 
-        object_id = enumerate_path_wrapper.remote(src_dst_pair, pair_output_path, max_hops, pickled_graph, padding)
-        # object_id = enumerate_paths(src_dst_pair, 3, graph, [mapping.num_relations, mapping.num_entities])
+        object_id = enumerate_path_wrapper.remote(src_dst_pair, pair_output_path, max_hops, pickled_graph,
+                                                  entity_to_string, relation_to_string)
+        # object_id = enumerate_paths(src_dst_pair, 3, graph,
+        #                             mapping.entity_id_to_string_dict,
+        #                             mapping.relation_id_to_string_dict)
         object_ids.append(object_id)
         manifest[strs] = pair_output_path
 
     print("Getting object IDs")
     ray.get(object_ids)
 
-    manifest_file_path = f"{dataset_path}/{output_path}/000manifest.pickle"
+    manifest_file_path = f"{dataset_path}/{output_path}/000manifest.json"
     print(f"Writing manifest file to {manifest_file_path}")
-    with open(manifest_file_path, "wb") as file:
-        pickle.dump(manifest, file)
+    with open(manifest_file_path, "w") as file:
+        json.dump(manifest, file)
 
     end_time = time()
     print(f"Finished generating paths in {round(end_time - start_time)} seconds.")

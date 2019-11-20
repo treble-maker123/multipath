@@ -4,6 +4,7 @@ from typing import Optional, Iterable, Dict, Tuple, List, Union
 import numpy as np
 import torch
 import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
 from torch.nn import DataParallel
 
 from config import configured_device
@@ -23,6 +24,7 @@ class Engine(Object, ABC):
         self.dataset: Optional[Dataset] = Dataset(self.config.dataset_path)
         self.model: Optional[Union[Model, DataParallel]] = self.build_model()
         self.optimizer: Optional[Optimizer] = Engine.build_optimizer(**self.build_optimizer_params())
+        self.lr_scheduler: Optional[lr_scheduler._LRScheduler] = self.build_lr_scheduler()
 
     # ==================================================================================================================
     # Properties
@@ -149,6 +151,11 @@ class Engine(Object, ABC):
         "adam": optim.Adam
     }
 
+    SCHEDULER_TYPES = {
+        "multistep": lr_scheduler.MultiStepLR,
+        "none": None
+    }
+
     def build_optimizer_params(self, **updated_args) -> Dict[str, object]:
         default_args = {
             "parameters": self.model.parameters(),
@@ -161,6 +168,17 @@ class Engine(Object, ABC):
         default_args.update(updated_args)
 
         return default_args
+
+    def build_lr_scheduler(self) -> Optional[lr_scheduler._LRScheduler]:
+        scheduler_type = self.SCHEDULER_TYPES[self.config.lr_scheduler]
+
+        if scheduler_type is None:
+            return None
+        elif scheduler_type is optim.lr_scheduler.MultiStepLR:
+            milestones = list(map(int, self.config.lr_milestones.split(",")))
+            return optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=milestones, gamma=self.config.lr_gamma)
+        else:
+            raise ValueError(f"Unrecognized type {scheduler_type}, expected one of {self.SCHEDULER_TYPES.keys()}.")
 
     @classmethod
     def build_optimizer(cls, parameters: Iterable[object], optimizer_type: str, **optimizer_params) -> Optimizer:

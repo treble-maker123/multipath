@@ -17,6 +17,8 @@ ENGINE_TYPES: Dict[str, Type[Engine]] = {
 torch.backends.cudnn.benchmark = True
 
 if __name__ == "__main__":
+    torch.autograd.set_detect_anomaly(True)
+
     # Setup PYTHONPATH
     sys.path.append("...")
 

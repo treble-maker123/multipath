@@ -16,6 +16,8 @@ def add_custom_config(parser: ArgumentParser) -> ArgumentParser:
                              "sampled.")
     parser.add_argument("--bucket-size", type=int, default=32000,
                         help="The maximum size of the bucket for grouping paths")
+    parser.add_argument("--test-single-path", dest="test_single_path", action="store_true", default=False,
+                        help="Whether to use only a single path for testing.")
 
     return parser
 
@@ -52,6 +54,13 @@ def add_model_config(parser: ArgumentParser):
                         help="Number of attention heads in the transformer.")
     parser.add_argument("--learn-rate", type=float,
                         default=0.01, help="Learning rate for the model.")
+    parser.add_argument("--lr-scheduler", type=str, default="none",
+                        help="A learning rate scheduler for the optimizer.")
+    parser.add_argument("--lr-milestones", type=str, default=0,
+                        help="A comma delimited list of epoch indices at which the learning rate scheduler will "
+                             "advance.")
+    parser.add_argument("--lr-gamma", type=float, default=1.0,
+                        help="Multiplicative factor of learning rate decay.")
     parser.add_argument("--weight-decay", type=float,
                         default=0.0, help="Weight decay or L2 norm on the model.")
     parser.add_argument("--embedding-decay", type=float,

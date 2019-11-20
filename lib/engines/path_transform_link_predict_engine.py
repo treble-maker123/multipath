@@ -169,6 +169,9 @@ class PathTransformLinkPredictEngine(Engine):
                     best_mrr = valid_mrr
                     self.save_current_model()
 
+            if self.lr_scheduler is not None:
+                self.lr_scheduler.step(epoch)
+
     def test(self) -> Result:
         self.logger.info(f"Loading model with best MRR...")
         self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
@@ -196,7 +199,7 @@ class PathTransformLinkPredictEngine(Engine):
         model.to(device=self.device)
         model.eval()
 
-        result = Result()
+        result = Result(entity_dict=self.entity_id_to_str_dict, relation_dict=self.relation_id_to_str_dict)
 
         for idx, (paths, mask, _, triplet, num_paths) in enumerate(tqdm(dataset)):
             labels = triplet[:, 1]

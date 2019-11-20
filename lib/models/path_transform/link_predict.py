@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+from pdb import set_trace
 
 from lib.models import Model
 from lib.models.path_transform.embedding import PathEmbedding
@@ -43,7 +44,7 @@ class LinkPredict(Model):
         # out: batch_size * hidden_dim
         path_embeddings = self._encode_paths(paths, masks, num_paths)
         # out: hidden_dim, num_rels
-        rel_weights = rel_weights = self.relation_weights.permute(1, 0)
+        rel_weights = self.relation_weights.permute(1, 0)
 
         # out: batch_size * num_rels
         scores = torch.mm(path_embeddings, rel_weights)
@@ -87,13 +88,27 @@ class LinkPredict(Model):
         # out: batch_size * hidden_dims
         path_cls_embedding = path_embedding[0]
 
+        # out: batch_size * num_rels
+        # path_scores = torch.mm(path_cls_embedding, self.relation_weights.T)
+
         # summarize multiple paths into one path embedding
         summarized_path_embeddings = []
         for num_path in num_paths:
             assert len(path_cls_embedding) > 0
-            triplet_embedding = path_cls_embedding[:num_path]
+            triplet_embedding = path_cls_embedding[:num_path]  # num_paths * hidden_dim
+
+            # if self.training:
+            #     path_weights = torch.sigmoid(path_scores[:num_path].sum(dim=1, keepdim=True))
+            #     triplet_embedding *= path_weights
+            #     summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
+            # else:
+            #     # find the most "versatile" path
+            #     max_idx = path_scores[:num_path].sum(dim=1).argmax()
+            #     summarized_path_embeddings.append(triplet_embedding[max_idx])
             summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
+
             path_cls_embedding = path_cls_embedding[num_path:]
+            # path_scores = path_scores[num_path:]
 
         # out: batch_size * hidden_dim
         summarized_path_embeddings = torch.stack(summarized_path_embeddings)

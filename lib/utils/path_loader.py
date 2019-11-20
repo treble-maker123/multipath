@@ -75,7 +75,7 @@ class PathLoader(Object, torch.utils.data.Dataset):
         try:
             int_paths.remove(int_triplet)
         except ValueError:
-            if self.data_split == "valid" or (self.data_split == "train" and label.item() == 1):
+            if not (self.data_split == "train" and label.item() == 0):
                 raise AssertionError(f"Failed to remove path for {self.data_split} set with query <{src_dst_str}> with"
                                      f" label {label}")
 
@@ -94,8 +94,10 @@ class PathLoader(Object, torch.utils.data.Dataset):
         paths, masks = list(zip(*tensor_conversion))
         paths, masks = torch.stack(paths), torch.stack(masks)
 
-        if len(paths) > self.config.max_paths:
-            paths, masks = self._sample_subset(paths, masks)
+        if self.data_split == "train" and len(paths) > self.config.max_paths:
+            paths, masks = self._sample_subset(paths, masks, self.config.max_paths)
+        else:
+            paths, masks = self._sample_subset(paths, masks, self.config.bucket_size)  # make sure no OOM on GPU
 
         return paths, masks, label, triplet, torch.LongTensor([len(paths)])
 
@@ -127,9 +129,10 @@ class PathLoader(Object, torch.utils.data.Dataset):
 
     def _sample_subset(self,
                        paths: torch.Tensor,
-                       masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                       masks: torch.Tensor,
+                       num_to_sample: int) -> Tuple[torch.Tensor, torch.Tensor]:
         num_paths = paths.shape[0]
-        subset_idx = torch.randperm(num_paths)[:self.config.max_paths]
+        subset_idx = torch.randperm(num_paths)[:num_to_sample]
 
         return paths[subset_idx, :], masks[subset_idx, :]
 

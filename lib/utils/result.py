@@ -1,10 +1,13 @@
 import pickle
+import numpy as np
 
 import torch
 from torch import Tensor
 
 from config import configured_device
 from lib import Object
+from typing import Dict
+from pdb import set_trace
 
 
 class Result(Object):
@@ -12,17 +15,23 @@ class Result(Object):
     calculates various metrics.
     """
 
-    def __init__(self, score: Tensor = None, label: Tensor = None):
+    def __init__(self, entity_dict: Dict = None, relation_dict: Dict = None, scores: Tensor = None,
+                 labels: Tensor = None, state: Dict = None):
         super().__init__()
 
-        if score and label:
-            assert score.shape[0] == label.shape[0]
+        if scores and labels:
+            assert scores.shape[0] == labels.shape[0]
 
         self.num_gpu = torch.cuda.device_count()
-        self.state = {
-            "score": score,
-            "label": label
-        }
+        if state is not None:
+            self.state = state
+        else:
+            self.state = {
+                "scores": scores,
+                "labels": labels,
+                "entity_dict": entity_dict,
+                "relation_dict": relation_dict
+            }
 
     def save_state(self, file_path: str):
         if file_path == "":
@@ -36,15 +45,15 @@ class Result(Object):
         with open(file_path, "wb") as file:
             pickle.dump(self.state, file)
 
-    def append(self, score: Tensor, label: Tensor) -> None:
-        assert score.shape[0] == label.shape[0], f"scores: {score.shape[0]}, labels: {label.shape[0]}"
+    def append(self, scores: Tensor, labels: Tensor) -> None:
+        assert scores.shape[0] == labels.shape[0], f"scores: {scores.shape[0]}, labels: {labels.shape[0]}"
 
-        if self.state["score"] is None:
-            self.state["score"] = score
-            self.state["label"] = label
+        if self.state["scores"] is None:
+            self.state["scores"] = scores
+            self.state["labels"] = labels
         else:
-            self.state["score"] = torch.cat([self.state["score"], score])
-            self.state["label"] = torch.cat([self.state["label"], label])
+            self.state["scores"] = torch.cat([self.state["scores"], scores])
+            self.state["labels"] = torch.cat([self.state["labels"], labels])
 
     def calculate_mrr(self) -> Tensor:
         ranks = self._get_ranks().to(device=configured_device)
@@ -61,8 +70,8 @@ class Result(Object):
         return mean_num_hits.cpu()
 
     def _get_ranks(self) -> Tensor:
-        score = self.state["score"].to(device=configured_device)
-        label = self.state["label"].to(device=configured_device)
+        score = self.state["scores"].to(device=configured_device)
+        label = self.state["labels"].to(device=configured_device)
 
         _, indices = score.sort(dim=1, descending=True)
         match = indices == label.view(-1, 1)
@@ -75,4 +84,4 @@ class Result(Object):
         with open(file_path, "rb") as file:
             state = pickle.load(file)
 
-        return cls(state)
+        return cls(state=state)

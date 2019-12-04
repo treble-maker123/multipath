@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Iterable, Dict, Tuple, List, Union
+from pdb import set_trace
 
 import numpy as np
 import torch
@@ -77,7 +78,7 @@ class Engine(Object, ABC):
             triplets = Dataset.load_triplets_from_file(f"{dataset_path}/graph_without_dev.txt")
             return self.dataset.triplets_to_idx(triplets).T
         else:
-            return None
+            return self.graph_data
 
     @property
     def num_nodes(self) -> int:

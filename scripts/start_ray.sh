@@ -11,4 +11,4 @@ ray start --head \
   --redis-port=8765 \
   --memory=4000000000 \
   --object-store-memory=32000000000 \
-  --num-cpus=46
+  --num-cpus=44

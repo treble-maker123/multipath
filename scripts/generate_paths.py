@@ -21,7 +21,7 @@ dataset_path = "data/CTD_RepoDB"
 input_set = "train"  # NOTE: dev set should use "valid"
 graph_set = "graph"
 output_path = f"{input_set}_paths"
-max_hops = 4
+max_hops = 3
 limit = -1
 
 # Linux

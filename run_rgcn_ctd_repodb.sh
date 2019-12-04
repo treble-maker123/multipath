@@ -24,16 +24,17 @@ export cmd="python3 main.py \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/CTD_RepoDB \
+--graph-sample-size=20000 \
 --data-size=-1 \
 --num-epochs=3000 \
 --num-rgcn-layers=2 \
 --num-bases=100 \
---hidden-dim=300 \
---validate-interval=250 \
---test-batch-size=120 \
+--hidden-dim=200 \
+--validate-interval=300 \
+--test-batch-size=4000 \
 --learn-rate=0.01 \
 --weight-decay=0.0 \
---embedding-decay=0.01 \
+--embedding-decay=0.0 \
 --rgcn-regularizer=bdd \
 --link-predict \
 --no-run-train-during-validate"

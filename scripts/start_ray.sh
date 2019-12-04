@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Command to start everything:
-# CUDA_VISIBLE_DEVICES="" bash scripts/start_ray.sh && python scripts/generate_paths.py && ray stop && exit
+# export CUDA_VISIBLE_DEVICES=""
+# bash scripts/start_ray.sh && python3 scripts/generate_paths.py && ray stop && exit
 
 export CUDA_VISIBLE_DEVICES=""
 
@@ -10,4 +11,4 @@ ray start --head \
   --redis-port=8765 \
   --memory=4000000000 \
   --object-store-memory=32000000000 \
-  --num-cpus=21
+  --num-cpus=46

@@ -17,22 +17,22 @@ import pickle
 import os
 import json
 
-dataset_path = "data/nell-995"
-input_set = "test"
+dataset_path = "data/CTD_RepoDB"
+input_set = "train"  # NOTE: dev set should use "valid"
 graph_set = "graph"
 output_path = f"{input_set}_paths"
 max_hops = 4
 limit = -1
 
 # Linux
-# ray.init(address="localhost:8765")
+ray.init(address="localhost:8765")
 
 
 # MacOS
-num_workers = 4
-worker_memory = int(2e9)  # bytes
-object_memory = int(8e9)  # bytes
-ray.init(num_cpus=num_workers, memory=worker_memory, object_store_memory=object_memory)
+# num_workers = 4
+# worker_memory = int(2e9)  # bytes
+# object_memory = int(8e9)  # bytes
+# ray.init(num_cpus=num_workers, memory=worker_memory, object_store_memory=object_memory)
 
 
 @ray.remote

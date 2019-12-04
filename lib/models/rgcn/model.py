@@ -47,16 +47,21 @@ class RGCN(Model):
         node_embedding, edge_embedding = self._encode(graph)
 
         if link_predict:
-            # batch_size x hidden_dim
             s, d = triplets[:, 0], triplets[:, 2]
 
-            emb_nodes = node_embedding[s] * node_embedding[d]  # out: batch_size x hidden_dim
-            emb_nodes = emb_nodes.transpose(0, 1).unsqueeze(2)  # out: hidden_dim x batch_size x 1
-            emb_c = edge_embedding.transpose(0, 1).unsqueeze(1)  # out hidden_dim x 1 x num_relations
-            out_prod = torch.bmm(emb_nodes, emb_c)  # out: hidden_dim x batch_size x num_entities
-            scores = torch.sum(out_prod, dim=0)  # out: batch_size x num_entities
+            # emb_nodes = node_embedding[s] * node_embedding[d]  # out: batch_size x hidden_dim
+            # emb_nodes = emb_nodes.transpose(0, 1).unsqueeze(2)  # out: hidden_dim x batch_size x 1
+            # emb_c = edge_embedding.transpose(0, 1).unsqueeze(1)  # out hidden_dim x 1 x num_relations
+            # out_prod = torch.bmm(emb_nodes, emb_c)  # out: hidden_dim x batch_size x num_entities
+            # scores = torch.sum(out_prod, dim=0)  # out: batch_size x num_entities
+
+            # cosine similarity
+            head_emb = node_embedding[s].unsqueeze(dim=1)  # out: batch_size x 1 x hidden_dim
+            tail_emb = node_embedding[d].unsqueeze(dim=1)  # out: batch_size x 1 x hidden_dim
+            rel_emb = edge_embedding.unsqueeze(dim=0)  # out: 1 x num_relations x hidden_dim
+            out_emb = head_emb * rel_emb  # out: batch_size x num_relations x hidden_dim
+            scores = F.cosine_similarity(out_emb, tail_emb, dim=2)
         else:
-            # batch_size x hidden_dim
             s, r = triplets[:, 0], triplets[:, 1]
 
             emb_ar = node_embedding[s] * edge_embedding[r]  # batch_size x hidden_dim
@@ -93,7 +98,9 @@ class RGCN(Model):
         s = node_embedding[triplets[:, 0]]
         r = edge_embedding[triplets[:, 1]]
         o = node_embedding[triplets[:, 2]]
-        score = torch.sum(s * r * o, dim=1)
+        # score = torch.sum(s * r * o, dim=1)
+
+        score = F.cosine_similarity(s * r, o, dim=1)
 
         return score
 

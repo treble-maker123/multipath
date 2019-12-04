@@ -19,9 +19,9 @@ export cmd="python main.py \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---no-write-tensorboard \
---no-save-model \
---no-save-result \
+--write-tensorboard \
+--save-model \
+--save-result \
 --use-gpu \
 --engine=path-transform-link-predict \
 --dataset-path=data/nell-995 \
@@ -29,7 +29,7 @@ export cmd="python main.py \
 --negative-sample-factor=1 \
 --num-epochs=200 \
 --num-workers=12 \
---train-batch-size=16 \
+--train-batch-size=256 \
 --test-batch-size=1 \
 --hidden-dim=128 \
 --learn-rate=0.0001 \

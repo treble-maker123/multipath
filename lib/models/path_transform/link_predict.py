@@ -42,14 +42,16 @@ class LinkPredict(Model):
         num_paths = kwargs.get("num_paths")  # out: batch_size * 1
 
         # out: batch_size * hidden_dim
-        path_embeddings = self._encode_paths(paths, masks, num_paths)
-        # out: hidden_dim, num_rels
-        rel_weights = self.relation_weights.permute(1, 0)
+        # path_embeddings = self._encode_paths(paths, masks, num_paths)
+        # # out: hidden_dim, num_rels
+        # rel_weights = self.relation_weights.permute(1, 0)
+        #
+        # # out: batch_size * num_rels
+        # scores = torch.mm(path_embeddings, rel_weights)
+        #
+        # return scores
 
-        # out: batch_size * num_rels
-        scores = torch.mm(path_embeddings, rel_weights)
-
-        return scores
+        return self._encode_paths(paths, masks, num_paths)
 
     def loss(self, triplet: Tensor, labels: Tensor, graph: Graph, **kwargs) -> Tensor:
         paths = kwargs.get("paths")  # out: num_paths * path-length
@@ -59,18 +61,21 @@ class LinkPredict(Model):
         target_rel_idx = triplet[:, 1]
         labels = labels.view(-1)
 
-        # num_rels * hidden_dim
-        rel_weights = self.relation_weights
-        # out: batch_size * hidden_dim
-        path_embeddings = self._encode_paths(paths, masks, num_paths)
-        # out: batch_size * hidden_dim
-        target_rel_weights = rel_weights[target_rel_idx]
+        # # num_rels * hidden_dim
+        # rel_weights = self.relation_weights
+        # # out: batch_size * hidden_dim
+        # path_embeddings = self._encode_paths(paths, masks, num_paths)
+        # # out: batch_size * hidden_dim
+        # target_rel_weights = rel_weights[target_rel_idx]
+        #
+        # # out: batch_size
+        # scores = (path_embeddings * target_rel_weights).sum(dim=1)
+        # scores = torch.sigmoid(scores)
 
-        # out: batch_size
-        scores = (path_embeddings * target_rel_weights).sum(dim=1)
-        scores = torch.sigmoid(scores)
+        # return F.binary_cross_entropy_with_logits(scores, labels.float())
 
-        return F.binary_cross_entropy_with_logits(scores, labels.float())
+        scores = self._encode_paths(paths, masks, num_paths)
+        return F.cross_entropy(scores, labels)
 
     def _encode_paths(self, paths: torch.Tensor, masks: torch.Tensor, num_paths: torch.Tensor) -> torch.Tensor:
         if len(paths) == 0:
@@ -89,28 +94,48 @@ class LinkPredict(Model):
         path_cls_embedding = path_embedding[0]
 
         # out: batch_size * num_rels
-        # path_scores = torch.mm(path_cls_embedding, self.relation_weights.T)
+        path_scores = torch.mm(path_cls_embedding, self.relation_weights.T)
+        path_scores = torch.softmax(path_scores, dim=1)
 
         # summarize multiple paths into one path embedding
-        summarized_path_embeddings = []
+        # summarized_path_embeddings = []
+
+        relation_scores = []
+
         for num_path in num_paths:
             assert len(path_cls_embedding) > 0
+            path_score_subset = path_scores[:num_path]  # num_paths * num_rels
             triplet_embedding = path_cls_embedding[:num_path]  # num_paths * hidden_dim
 
-            # if self.training:
-            #     path_weights = torch.sigmoid(path_scores[:num_path].sum(dim=1, keepdim=True))
-            #     triplet_embedding *= path_weights
-            #     summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
-            # else:
-            #     # find the most "versatile" path
-            #     max_idx = path_scores[:num_path].sum(dim=1).argmax()
-            #     summarized_path_embeddings.append(triplet_embedding[max_idx])
-            summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
+            if self.training:
+                # path_weights = torch.sigmoid(path_scores[:num_path].sum(dim=1, keepdim=True))
+                # triplet_embedding *= path_weights
+                # summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
 
-            path_cls_embedding = path_cls_embedding[num_path:]
+                relation_embed = torch.mm(path_score_subset.T, triplet_embedding)  # num_rels * hidden_dim
+                relation_score = (relation_embed * self.relation_weights).sum(dim=1)  # num_rels
+                relation_scores.append(relation_score)
+            else:
+                # find the most "versatile" path
+                # max_idx = path_scores[:num_path].sum(dim=1).argmax()
+                # summarized_path_embeddings.append(triplet_embedding[max_idx])
+
+                max_idx = path_score_subset.argmax(dim=1)  # num_paths
+                mask = torch.zeros_like(path_score_subset, device=self.device)  # num_paths * num_rels
+                mask[:, max_idx] = 1
+                masked_path_score_subset = mask * path_score_subset  # num_paths * num_rels
+                relation_embed = torch.mm(masked_path_score_subset.T, triplet_embedding)
+                relation_score = (relation_embed * self.relation_weights).sum(dim=1)  # num_rels
+                relation_scores.append(relation_score)
+
+            # summarized_path_embeddings.append(triplet_embedding.mean(dim=0))
+
+            # path_cls_embedding = path_cls_embedding[num_path:]
             # path_scores = path_scores[num_path:]
 
         # out: batch_size * hidden_dim
-        summarized_path_embeddings = torch.stack(summarized_path_embeddings)
+        # summarized_path_embeddings = torch.stack(summarized_path_embeddings)
 
-        return summarized_path_embeddings
+        # return summarized_path_embeddings
+
+        return torch.stack(relation_scores)

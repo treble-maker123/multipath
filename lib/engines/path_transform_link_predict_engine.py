@@ -86,7 +86,7 @@ class PathTransformLinkPredictEngine(Engine):
         return model
 
     def run(self) -> None:
-        self.train(self.config.num_epochs)
+        # self.train(self.config.num_epochs)
         self.test()
 
     def train(self, num_epochs: int) -> None:
@@ -174,7 +174,7 @@ class PathTransformLinkPredictEngine(Engine):
 
     def test(self) -> Result:
         self.logger.info(f"Loading model with best MRR...")
-        self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
+        # self.model = self.build_model().initialize_weights_from_file(file_path=self.model_file_path)
         test_loader = self.test_loader
 
         self.logger.info("Starting testing...")

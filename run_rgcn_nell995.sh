@@ -13,14 +13,16 @@
 # export CUDA_LAUNCH_BLOCKING=1
 
 # To make a boolean option False, simply prefix with "no-"
-export cmd="python3 main.py \
+export cmd="python3 -i main.py \
 --run-id=$SLURM_JOB_ID \
+--run-id=5855614 \
 --log-level 20 \
 --no-log-to-file \
 --log-to-stdout \
---write-tensorboard \
---save-model \
---save-result \
+--no-write-tensorboard \
+--no-save-model \
+--no-save-result \
+--interactive \
 --use-gpu \
 --engine=rgcn \
 --dataset-path=data/nell-995 \

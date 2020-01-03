@@ -102,14 +102,18 @@ class LinkPredict(Model):
         # summarize multiple paths into one path embedding
         summarized_path_embeddings = []
 
-        relation_scores = []
+        # relation_scores = []
 
         for num_path in num_paths:
             assert len(path_cls_embedding) > 0
             path_score_subset = path_scores[:num_path]  # num_paths * num_rels
             path_embeddings = path_cls_embedding[:num_path]  # num_paths * hidden_dim
 
-            if self.training:
+            path_weights = torch.sigmoid(path_score_subset).unsqueeze(dim=1)
+            weighted_path_embeddings = path_embeddings * path_weights
+            summarized_path_embeddings.append(weighted_path_embeddings.mean(dim=0))
+
+            if False and self.training:
                 path_weights = torch.sigmoid(path_score_subset).unsqueeze(dim=1)
                 weighted_path_embeddings = path_embeddings * path_weights
                 summarized_path_embeddings.append(weighted_path_embeddings.mean(dim=0))

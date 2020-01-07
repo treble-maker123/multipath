@@ -3,6 +3,7 @@
 ## Instructions
 
 1. Download the data by running `python3 download.py` in the `data/` directory (Data courtesy of [MINERVA](https://github.com/shehzaadzd/MINERVA)),
+1. For the full set of data used here, including the biomedical data, download this file and uncompress [here](https://s3.amazonaws.com/assets.ziqiangguan.com/multipath_data.zip),
 1. Run the experiments by picking any of the `run_*.sh` scripts with `./run_*.sh` or `bash run_*.sh`.
 
 ## Notes
